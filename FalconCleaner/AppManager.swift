@@ -57,8 +57,15 @@ class AppManager {
         } catch {
             print("Standard trash failed for \(app.name), trying AppleScript fallback: \(error)")
             if !moveWithAppleScript(url: app.path) {
+                print("AppleScript fallback failed for \(app.name)")
                 throw error
             }
+        }
+        
+        // 4. Verification: Check if the app bundle still exists
+        // If the user cancelled the password prompt, the script might return false OR the command might simply not have had an effect.
+        if fileManager.fileExists(atPath: app.path.path) {
+            throw NSError(domain: "FalconCleaner", code: 1, userInfo: [NSLocalizedDescriptionKey: "User cancelled or operation failed to move \(app.name) to Trash."])
         }
         
         // 4. Move related files to Trash
