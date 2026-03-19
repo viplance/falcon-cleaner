@@ -2,6 +2,13 @@ import Foundation
 import SwiftUI
 import Combine
 
+enum AppCategory: String, CaseIterable, Identifiable {
+    case all = "All"
+    case standard = "Applications"
+    case brew = "Brew"
+    var id: String { self.rawValue }
+}
+
 @MainActor
 class AppListViewModel: ObservableObject {
     @Published var apps: [AppInfo] = []
@@ -10,12 +17,23 @@ class AppListViewModel: ObservableObject {
     @Published var isCleaning: Bool = false
     @Published var progressMessage: String = ""
     @Published var searchText: String = ""
+    @Published var selectedCategory: AppCategory = .all
     
     var filteredApps: [AppInfo] {
-        if searchText.isEmpty {
-            return apps
+        let categoryApps: [AppInfo]
+        switch selectedCategory {
+        case .all:
+            categoryApps = apps
+        case .standard:
+            categoryApps = apps.filter { $0.type == .standard }
+        case .brew:
+            categoryApps = apps.filter { $0.type == .brew }
         }
-        return apps.filter { $0.name.localizedCaseInsensitiveContains(searchText) || ($0.bundleIdentifier?.localizedCaseInsensitiveContains(searchText) ?? false) }
+        
+        if searchText.isEmpty {
+            return categoryApps
+        }
+        return categoryApps.filter { $0.name.localizedCaseInsensitiveContains(searchText) || ($0.bundleIdentifier?.localizedCaseInsensitiveContains(searchText) ?? false) }
     }
     
     func scan() async {

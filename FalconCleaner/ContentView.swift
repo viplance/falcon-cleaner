@@ -6,11 +6,19 @@ struct ContentView: View {
     
     var body: some View {
         NavigationSplitView {
-            List {
-                NavigationLink(value: "Apps") {
-                    Label("Applications", systemImage: "app")
+            List(AppCategory.allCases, selection: $viewModel.selectedCategory) { category in
+                NavigationLink(value: category) {
+                    Label(
+                        category.rawValue,
+                        systemImage: {
+                            switch category {
+                            case .all: return "circle.grid.2x2.fill"
+                            case .standard: return "app.fill"
+                            case .brew: return "terminal"
+                            }
+                        }()
+                    )
                 }
-                .tag("Apps")
             }
             .listStyle(.sidebar)
             .navigationTitle("FalconCleaner")
