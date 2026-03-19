@@ -41,11 +41,7 @@ class AppScanner {
         let isSystemApp = url.path.hasPrefix("/System") || url.path.hasPrefix("/Library/Apple")
         
         let icon = NSWorkspace.shared.icon(forFile: url.path)
-        
-        var bundleSize: Int64 = 0
-        if let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey, .totalFileSizeKey]) {
-            bundleSize = Int64(resourceValues.totalFileSize ?? resourceValues.fileSize ?? 0)
-        }
+        let bundleSize = allocatedSizeOfDirectory(at: url)
         
         var app = AppInfo(
             name: name,
@@ -58,6 +54,23 @@ class AppScanner {
         
         app.relatedFiles = findRelatedFiles(for: app)
         return app
+    }
+
+    private func allocatedSizeOfDirectory(at url: URL) -> Int64 {
+        var size: Int64 = 0
+        let keys: [URLResourceKey] = [.isRegularFileKey, .totalFileAllocatedSizeKey, .fileAllocatedSizeKey]
+        
+        guard let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: keys, options: []) else {
+            return 0
+        }
+        
+        for case let fileURL as URL in enumerator {
+            guard let resourceValues = try? fileURL.resourceValues(forKeys: Set(keys)) else { continue }
+            if resourceValues.isRegularFile ?? false {
+                size += Int64(resourceValues.totalFileAllocatedSize ?? resourceValues.fileAllocatedSize ?? 0)
+            }
+        }
+        return size
     }
     
     func findRelatedFiles(for app: AppInfo) -> [URL] {

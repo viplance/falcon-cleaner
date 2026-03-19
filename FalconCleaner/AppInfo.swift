@@ -12,7 +12,32 @@ struct AppInfo: Identifiable, Hashable {
     var relatedFiles: [URL] = []
     
     var totalSize: Int64 {
-        let relatedSize = relatedFiles.reduce(0) { $0 + Int64((try? $1.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0) }
+        let relatedSize = relatedFiles.reduce(0) { $0 + allocatedSizeOfDirectory(at: $1) }
         return bundleSize + relatedSize
+    }
+    
+    private func allocatedSizeOfDirectory(at url: URL) -> Int64 {
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), !isDir.boolValue {
+            // It's a file
+            let keys: [URLResourceKey] = [.totalFileAllocatedSizeKey, .fileAllocatedSizeKey]
+            guard let resourceValues = try? url.resourceValues(forKeys: Set(keys)) else { return 0 }
+            return Int64(resourceValues.totalFileAllocatedSize ?? resourceValues.fileAllocatedSize ?? 0)
+        }
+        
+        // It's a directory
+        var size: Int64 = 0
+        let keys: [URLResourceKey] = [.isRegularFileKey, .totalFileAllocatedSizeKey, .fileAllocatedSizeKey]
+        guard let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: keys, options: []) else {
+            return 0
+        }
+        
+        for case let fileURL as URL in enumerator {
+            guard let resourceValues = try? fileURL.resourceValues(forKeys: Set(keys)) else { continue }
+            if resourceValues.isRegularFile ?? false {
+                size += Int64(resourceValues.totalFileAllocatedSize ?? resourceValues.fileAllocatedSize ?? 0)
+            }
+        }
+        return size
     }
 }
