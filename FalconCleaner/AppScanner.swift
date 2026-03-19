@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import UniformTypeIdentifiers
 
 class AppScanner {
     static let shared = AppScanner()
@@ -67,7 +68,7 @@ class AppScanner {
                 let relatedFiles = findRelatedFiles(forName: formulaName, bundleIdentifier: nil)
                 let relatedSize = relatedFiles.reduce(0) { $0 + allocatedSizeOfDirectory(at: $1) }
                 
-                let icon = NSWorkspace.shared.icon(forFileType: "com.apple.executable")
+                let icon = NSWorkspace.shared.icon(for: .unixExecutable)
                 
                 let app = AppInfo(
                     name: formulaName,
