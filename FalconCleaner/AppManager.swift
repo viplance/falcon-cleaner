@@ -45,39 +45,43 @@ class AppManager {
         }
         
         // 2. Prepare paths by clearing immutable flags (unlocking)
-        // This helps with "Kern Failure (0x5)" and "Access Denied" for locked files
         unlockPath(app.path)
         for fileURL in app.relatedFiles {
             unlockPath(fileURL)
         }
         
-        // 3. Move app to Trash
+        var failedURLs: [URL] = []
+        
+        // 3. Attempt standard trash for the app
         do {
             try fileManager.trashItem(at: app.path, resultingItemURL: nil)
         } catch {
-            print("Standard trash failed for \(app.name), trying AppleScript fallback: \(error)")
-            if !moveWithAppleScript(url: app.path) {
-                print("AppleScript fallback failed for \(app.name)")
-                throw error
-            }
+            print("Standard trash failed for \(app.name), staging for AppleScript: \(error)")
+            failedURLs.append(app.path)
         }
         
-        // 4. Verification: Check if the app bundle still exists
-        // If the user cancelled the password prompt, the script might return false OR the command might simply not have had an effect.
-        if fileManager.fileExists(atPath: app.path.path) {
-            throw NSError(domain: "FalconCleaner", code: 1, userInfo: [NSLocalizedDescriptionKey: "User cancelled or operation failed to move \(app.name) to Trash."])
-        }
-        
-        // 4. Move related files to Trash
+        // 4. Attempt standard trash for related files
         for fileURL in app.relatedFiles {
             if fileManager.fileExists(atPath: fileURL.path) {
                 do {
                     try fileManager.trashItem(at: fileURL, resultingItemURL: nil)
                 } catch {
-                    print("Standard trash failed for related file \(fileURL.lastPathComponent), trying AppleScript fallback")
-                    _ = moveWithAppleScript(url: fileURL)
+                    print("Standard trash failed for related file \(fileURL.lastPathComponent), staging for AppleScript")
+                    failedURLs.append(fileURL)
                 }
             }
+        }
+        
+        // 5. AppleScript Fallback for all failed items at once
+        if !failedURLs.isEmpty {
+            if !moveWithAppleScript(urls: failedURLs) {
+                print("AppleScript batch fallback failed for \(app.name)")
+            }
+        }
+        
+        // 6. Final Verification: Check if the main app bundle still exists
+        if fileManager.fileExists(atPath: app.path.path) {
+            throw NSError(domain: "FalconCleaner", code: 1, userInfo: [NSLocalizedDescriptionKey: "User cancelled or operation failed to move \(app.name) to Trash."])
         }
     }
     
@@ -91,24 +95,43 @@ class AppManager {
         process.waitUntilExit()
     }
     
-    private func moveWithAppleScript(url: URL) -> Bool {
-        let escapedPath = url.path.replacingOccurrences(of: "\"", with: "\\\"")
+    private func moveWithAppleScript(urls: [URL]) -> Bool {
+        let pathStrings = urls.map { "\"\($0.path.replacingOccurrences(of: "\"", with: "\\\""))\"" }.joined(separator: ", ")
         
-        // We use a more explicit Finder command that handles POSIX paths as aliases
-        // This often triggers the permission dialog more reliably than the raw 'delete POSIX file' command
+        // We convert the POSIX paths to a list of Finder items (aliases/POSIX files)
+        // and delete them all in a single command. This triggers ONLY ONE password prompt.
         let scriptSource = """
-        set posixPath to "\(escapedPath)"
+        set posixPaths to {\(pathStrings)}
         tell application "Finder"
             if not running then
                 launch
-                delay 1 -- Give Finder a moment to initialize
+                delay 1
             end if
+            set itemAliases to {}
+            repeat with aPath in posixPaths
+                try
+                    -- Using 'as alias' on a POSIX file string within a try block
+                    set theItem to POSIX file aPath as alias
+                    set end of itemAliases to theItem
+                on error
+                    try
+                        -- Fallback for items that Finder is picky about
+                        set theItem to (aPath as POSIX file)
+                        set end of itemAliases to theItem
+                    on error errMsg
+                        log "Could not resolve path: " & aPath & " Error: " & errMsg
+                    end try
+                end error
+            end repeat
+            
+            if (count of itemAliases) is 0 then return false
+            
             try
-                set theItem to POSIX file posixPath as alias
-                delete theItem
+                delete itemAliases
                 return true
             on error errMsg number errNum
-                log "Finder error: " & errMsg & " (" & errNum & ")"
+                -- If we got here, the delete command itself failed (e.g. User Cancelled)
+                log "Finder delete error: " & errMsg & " (" & errNum & ")"
                 return false
             end try
         end tell
@@ -119,7 +142,6 @@ class AppManager {
             let result = script.executeAndReturnError(&error)
             
             if error == nil {
-                // Check the boolean return value from the script itself
                 return result.booleanValue
             } else {
                 print("AppleScript execution error: \(String(describing: error))")
