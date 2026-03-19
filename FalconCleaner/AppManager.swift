@@ -44,14 +44,80 @@ class AppManager {
             _ = await stopApp(bundleIdentifier: app.bundleIdentifier)
         }
         
-        // 2. Move app to Trash
-        try fileManager.trashItem(at: app.path, resultingItemURL: nil)
-        
-        // 3. Move related files to Trash
+        // 2. Prepare paths by clearing immutable flags (unlocking)
+        // This helps with "Kern Failure (0x5)" and "Access Denied" for locked files
+        unlockPath(app.path)
         for fileURL in app.relatedFiles {
-            if fileManager.fileExists(atPath: fileURL.path) {
-                try? fileManager.trashItem(at: fileURL, resultingItemURL: nil)
+            unlockPath(fileURL)
+        }
+        
+        // 3. Move app to Trash
+        do {
+            try fileManager.trashItem(at: app.path, resultingItemURL: nil)
+        } catch {
+            print("Standard trash failed for \(app.name), trying AppleScript fallback: \(error)")
+            if !moveWithAppleScript(url: app.path) {
+                throw error
             }
         }
+        
+        // 4. Move related files to Trash
+        for fileURL in app.relatedFiles {
+            if fileManager.fileExists(atPath: fileURL.path) {
+                do {
+                    try fileManager.trashItem(at: fileURL, resultingItemURL: nil)
+                } catch {
+                    print("Standard trash failed for related file \(fileURL.lastPathComponent), trying AppleScript fallback")
+                    _ = moveWithAppleScript(url: fileURL)
+                }
+            }
+        }
+    }
+    
+    private func unlockPath(_ url: URL) {
+        // Use chflags to clear uchg (user immutable) and uappnd (user append-only)
+        // We do this recursively for directories
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/chflags")
+        process.arguments = ["-R", "nouchg,nouappnd", url.path]
+        try? process.run()
+        process.waitUntilExit()
+    }
+    
+    private func moveWithAppleScript(url: URL) -> Bool {
+        let escapedPath = url.path.replacingOccurrences(of: "\"", with: "\\\"")
+        
+        // We use a more explicit Finder command that handles POSIX paths as aliases
+        // This often triggers the permission dialog more reliably than the raw 'delete POSIX file' command
+        let scriptSource = """
+        set posixPath to "\(escapedPath)"
+        tell application "Finder"
+            if not running then
+                launch
+                delay 1 -- Give Finder a moment to initialize
+            end if
+            try
+                set theItem to POSIX file posixPath as alias
+                delete theItem
+                return true
+            on error errMsg number errNum
+                log "Finder error: " & errMsg & " (" & errNum & ")"
+                return false
+            end try
+        end tell
+        """
+        
+        if let script = NSAppleScript(source: scriptSource) {
+            var error: NSDictionary?
+            let result = script.executeAndReturnError(&error)
+            
+            if error == nil {
+                // Check the boolean return value from the script itself
+                return result.booleanValue
+            } else {
+                print("AppleScript execution error: \(String(describing: error))")
+            }
+        }
+        return false
     }
 }

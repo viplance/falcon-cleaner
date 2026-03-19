@@ -15,15 +15,18 @@ class AppScanner {
         var apps: [AppInfo] = []
         
         for dir in appDirs {
-            do {
-                let contents = try fileManager.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isApplicationKey, .fileSizeKey], options: .skipsHiddenFiles)
-                for url in contents where url.pathExtension == "app" {
-                    if let appInfo = extractAppInfo(from: url) {
-                        apps.append(appInfo)
+            var isDirectory: ObjCBool = false
+            if fileManager.fileExists(atPath: dir.path, isDirectory: &isDirectory), isDirectory.boolValue {
+                do {
+                    let contents = try fileManager.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isApplicationKey, .fileSizeKey], options: .skipsHiddenFiles)
+                    for url in contents where url.pathExtension == "app" {
+                        if let appInfo = extractAppInfo(from: url) {
+                            apps.append(appInfo)
+                        }
                     }
+                } catch {
+                    print("Error scanning directory \(dir.path): \(error)")
                 }
-            } catch {
-                print("Error scanning directory \(dir.path): \(error)")
             }
         }
         

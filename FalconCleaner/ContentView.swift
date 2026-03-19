@@ -8,7 +8,7 @@ struct ContentView: View {
         NavigationSplitView {
             List {
                 NavigationLink(value: "Apps") {
-                    Label("Applications", systemImage: "app.gradient")
+                    Label("Applications", systemImage: "app")
                 }
                 .tag("Apps")
             }
