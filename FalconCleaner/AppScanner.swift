@@ -46,16 +46,20 @@ class AppScanner {
         let icon = NSWorkspace.shared.icon(forFile: url.path)
         let bundleSize = allocatedSizeOfDirectory(at: url)
         
-        var app = AppInfo(
+        let relatedFiles = findRelatedFiles(forName: name, bundleIdentifier: bundleIdentifier)
+        let relatedSize = relatedFiles.reduce(0) { $0 + allocatedSizeOfDirectory(at: $1) }
+        
+        let app = AppInfo(
             name: name,
             bundleIdentifier: bundleIdentifier,
             path: url,
             icon: icon,
             bundleSize: bundleSize,
-            isSystemApp: isSystemApp
+            isSystemApp: isSystemApp,
+            relatedFiles: relatedFiles,
+            totalSize: bundleSize + relatedSize
         )
         
-        app.relatedFiles = findRelatedFiles(for: app)
         return app
     }
 
@@ -76,7 +80,7 @@ class AppScanner {
         return size
     }
     
-    func findRelatedFiles(for app: AppInfo) -> [URL] {
+    func findRelatedFiles(forName name: String, bundleIdentifier: String?) -> [URL] {
         var related: [URL] = []
         let libraryFolders = [
             "Application Support",
@@ -97,7 +101,7 @@ class AppScanner {
             let folderURL = homeLibrary.appendingPathComponent(folder)
             
             // Search by bundle identifier
-            if let bid = app.bundleIdentifier {
+            if let bid = bundleIdentifier {
                 let bidURL = folderURL.appendingPathComponent(bid)
                 if fileManager.fileExists(atPath: bidURL.path) {
                     related.append(bidURL)
@@ -113,7 +117,7 @@ class AppScanner {
             }
             
             // Search by app name
-            let nameURL = folderURL.appendingPathComponent(app.name)
+            let nameURL = folderURL.appendingPathComponent(name)
             if fileManager.fileExists(atPath: nameURL.path) {
                 if !related.contains(nameURL) {
                     related.append(nameURL)
@@ -121,7 +125,7 @@ class AppScanner {
             }
             
             // Search by app name without spaces
-            let nameNoSpaces = app.name.replacingOccurrences(of: " ", with: "")
+            let nameNoSpaces = name.replacingOccurrences(of: " ", with: "")
             let nameNoSpacesURL = folderURL.appendingPathComponent(nameNoSpaces)
             if fileManager.fileExists(atPath: nameNoSpacesURL.path) {
                 if !related.contains(nameNoSpacesURL) {

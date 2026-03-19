@@ -11,10 +11,7 @@ struct AppInfo: Identifiable, Hashable {
     let isSystemApp: Bool
     var relatedFiles: [URL] = []
     
-    var totalSize: Int64 {
-        let relatedSize = relatedFiles.reduce(0) { $0 + allocatedSizeOfDirectory(at: $1) }
-        return bundleSize + relatedSize
-    }
+    let totalSize: Int64
     
     private func allocatedSizeOfDirectory(at url: URL) -> Int64 {
         var isDir: ObjCBool = false
