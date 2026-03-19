@@ -14,6 +14,7 @@ class AppScanner {
         
         var apps: [AppInfo] = []
         
+        // 1. Scan Standard Apps
         for dir in appDirs {
             var isDirectory: ObjCBool = false
             if fileManager.fileExists(atPath: dir.path, isDirectory: &isDirectory), isDirectory.boolValue {
@@ -30,7 +31,129 @@ class AppScanner {
             }
         }
         
+        // 2. Scan Brew Apps & Services
+        let brewApps = await scanBrewApps()
+        apps.append(contentsOf: brewApps)
+        
         return apps.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+    
+    private func scanBrewApps() async -> [AppInfo] {
+        var brewApps: [AppInfo] = []
+        let brewPrefix = getBrewPrefix()
+        let cellarPath = "\(brewPrefix)/Cellar"
+        let cellarURL = URL(fileURLWithPath: cellarPath)
+        
+        print("Brew scanner checking: \(cellarPath)")
+        guard fileManager.fileExists(atPath: cellarPath) else { 
+            print("Brew Cellar not found at \(cellarPath)")
+            return [] 
+        }
+        
+        // Get services list to match with formulae
+        let services = getBrewServices()
+        
+        do {
+            let formulaDirs = try fileManager.contentsOfDirectory(at: cellarURL, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
+            
+            for formulaDir in formulaDirs {
+                let formulaName = formulaDir.lastPathComponent
+                
+                // Get the latest version directory
+                let versions = try fileManager.contentsOfDirectory(at: formulaDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
+                guard let latestVersion = versions.sorted(by: { $0.path.compare($1.path, options: .numeric) == .orderedDescending }).first else { continue }
+                
+                let bundleSize = allocatedSizeOfDirectory(at: latestVersion)
+                let relatedFiles = findRelatedFiles(forName: formulaName, bundleIdentifier: nil)
+                let relatedSize = relatedFiles.reduce(0) { $0 + allocatedSizeOfDirectory(at: $1) }
+                
+                let icon = NSWorkspace.shared.icon(forFileType: "com.apple.executable")
+                
+                let app = AppInfo(
+                    name: formulaName,
+                    bundleIdentifier: "brew.\(formulaName)",
+                    path: formulaDir,
+                    icon: icon,
+                    bundleSize: bundleSize,
+                    isSystemApp: false,
+                    type: .brew,
+                    brewServiceName: services.contains(formulaName) ? formulaName : nil,
+                    relatedFiles: relatedFiles,
+                    totalSize: bundleSize + relatedSize
+                )
+                brewApps.append(app)
+            }
+        } catch {
+            print("Error scanning brew apps: \(error)")
+        }
+        
+        return brewApps
+    }
+    
+    private func getBrewPrefix() -> String {
+        // 1. Check Env
+        if let envPrefix = ProcessInfo.processInfo.environment["HOMEBREW_PREFIX"] {
+            return envPrefix
+        }
+        
+        // 2. Check Common Paths
+        let commonPaths = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew", "/usr/bin/brew"]
+        for brewPath in commonPaths {
+            if fileManager.fileExists(atPath: brewPath) {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: brewPath)
+                process.arguments = ["--prefix"]
+                let pipe = Pipe()
+                process.standardOutput = pipe
+                try? process.run()
+                process.waitUntilExit()
+                
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                if let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) {
+                    return output
+                }
+            }
+        }
+        return "/opt/homebrew" // Default for Apple Silicon
+    }
+    
+    private func getBrewServices() -> [String] {
+        let brewBinary = getBrewBinaryPath()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [brewBinary, "services", "list"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        try? process.run()
+        process.waitUntilExit()
+        
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let output = String(data: data, encoding: .utf8) else { return [] }
+        
+        var services: [String] = []
+        let lines = output.components(separatedBy: .newlines)
+        for line in lines {
+            // Brew services list format: Name Status User File
+            // We look for lines that have 'started' or 'error' or 'none' in them
+            let parts = line.split(separator: " ", omittingEmptySubsequences: true)
+            if parts.count >= 2 {
+                let name = String(parts[0])
+                let status = String(parts[1])
+                // Simple heuristic: if the second word is a known status, the first is the name
+                if ["started", "none", "error", "stopped", "scheduled"].contains(status.lowercased()) {
+                    services.append(name)
+                }
+            }
+        }
+        return services
+    }
+    
+    private func getBrewBinaryPath() -> String {
+        let paths = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew", "/usr/bin/brew"]
+        for p in paths {
+            if fileManager.fileExists(atPath: p) { return p }
+        }
+        return "brew" // fallback to env
     }
     
     private func extractAppInfo(from url: URL) -> AppInfo? {
@@ -56,6 +179,8 @@ class AppScanner {
             icon: icon,
             bundleSize: bundleSize,
             isSystemApp: isSystemApp,
+            type: .standard,
+            brewServiceName: nil,
             relatedFiles: relatedFiles,
             totalSize: bundleSize + relatedSize
         )

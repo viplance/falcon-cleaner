@@ -1,6 +1,11 @@
 import Foundation
 import AppKit
 
+enum AppType {
+    case standard
+    case brew
+}
+
 struct AppInfo: Identifiable, Hashable {
     let id: UUID = UUID()
     let name: String
@@ -9,6 +14,8 @@ struct AppInfo: Identifiable, Hashable {
     let icon: NSImage?
     let bundleSize: Int64
     let isSystemApp: Bool
+    let type: AppType
+    let brewServiceName: String?
     var relatedFiles: [URL] = []
     
     let totalSize: Int64

@@ -39,8 +39,13 @@ class AppManager {
     }
     
     func cleanup(app: AppInfo) async throws {
-        // 1. Stop app if running
-        if isAppRunning(bundleIdentifier: app.bundleIdentifier) {
+        // 1. Stop app/service if running
+        if app.type == .brew {
+            if let serviceName = app.brewServiceName {
+                progressMessage("Stopping brew service \(serviceName)...")
+                await stopBrewService(serviceName)
+            }
+        } else if isAppRunning(bundleIdentifier: app.bundleIdentifier) {
             _ = await stopApp(bundleIdentifier: app.bundleIdentifier)
         }
         
@@ -50,17 +55,24 @@ class AppManager {
             unlockPath(fileURL)
         }
         
-        var failedURLs: [URL] = []
-        
-        // 3. Attempt standard trash for the app
-        do {
-            try fileManager.trashItem(at: app.path, resultingItemURL: nil)
-        } catch {
-            print("Standard trash failed for \(app.name), staging for AppleScript: \(error)")
-            failedURLs.append(app.path)
+        // 3. Perform Type-Specific Cleanup
+        if app.type == .brew {
+            await uninstallBrewFormula(app.name)
         }
         
-        // 4. Attempt standard trash for related files
+        var failedURLs: [URL] = []
+        
+        // 4. Attempt standard trash for the main path (if it still exists after brew uninstall)
+        if fileManager.fileExists(atPath: app.path.path) {
+            do {
+                try fileManager.trashItem(at: app.path, resultingItemURL: nil)
+            } catch {
+                print("Trash failed for \(app.name), staging for AppleScript: \(error)")
+                failedURLs.append(app.path)
+            }
+        }
+        
+        // 5. Attempt standard trash for related files
         for fileURL in app.relatedFiles {
             if fileManager.fileExists(atPath: fileURL.path) {
                 do {
@@ -72,17 +84,38 @@ class AppManager {
             }
         }
         
-        // 5. AppleScript Fallback for all failed items at once
+        // 6. AppleScript Fallback for all failed items
         if !failedURLs.isEmpty {
             if !moveWithAppleScript(urls: failedURLs) {
                 print("AppleScript batch fallback failed for \(app.name)")
             }
         }
         
-        // 6. Final Verification: Check if the main app bundle still exists
+        // 7. Final Verification
         if fileManager.fileExists(atPath: app.path.path) {
-            throw NSError(domain: "FalconCleaner", code: 1, userInfo: [NSLocalizedDescriptionKey: "User cancelled or operation failed to move \(app.name) to Trash."])
+            throw NSError(domain: "FalconCleaner", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to remove \(app.name)."])
         }
+    }
+    
+    private func stopBrewService(_ name: String) async {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["brew", "services", "stop", name]
+        try? process.run()
+        process.waitUntilExit()
+    }
+    
+    private func uninstallBrewFormula(_ name: String) async {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["brew", "uninstall", "--force", name]
+        try? process.run()
+        process.waitUntilExit()
+    }
+    
+    private func progressMessage(_ message: String) {
+        // This is a placeholder for potential progress reporting
+        print(message)
     }
     
     private func unlockPath(_ url: URL) {
