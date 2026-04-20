@@ -1,0 +1,11 @@
+{
+  "name": "falcon-cleaner",
+  "version": "1.1",
+  "description": "Falcon Cleaner",
+  "private": true,
+  "scripts": {
+    "build:app": "xcodebuild -project FalconCleaner.xcodeproj -scheme FalconCleaner -configuration Release clean build SYMROOT=$(PWD)/build",
+    "build:dmg": "mkdir -p build/dmg_temp && cp -r build/Release/FalconCleaner.app build/dmg_temp/ && ln -s /Applications build/dmg_temp/Applications && hdiutil create -volname \"FalconCleaner Installer\" -srcfolder build/dmg_temp -ov -format UDZO build/FalconCleaner.dmg && rm -rf build/dmg_temp",
+    "build": "npm run build:app && npm run build:dmg"
+  }
+}
