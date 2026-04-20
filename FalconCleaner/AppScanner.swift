@@ -36,6 +36,10 @@ class AppScanner {
         let brewApps = await scanBrewApps()
         apps.append(contentsOf: brewApps)
         
+        // 3. Scan Startup Scripts
+        let startupApps = scanStartupScripts()
+        apps.append(contentsOf: startupApps)
+        
         return apps.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
     
@@ -89,6 +93,46 @@ class AppScanner {
         }
         
         return brewApps
+    }
+    
+    private func scanStartupScripts() -> [AppInfo] {
+        var startupApps: [AppInfo] = []
+        let paths = [
+            URL(fileURLWithPath: "\(NSHomeDirectory())/Library/LaunchAgents"),
+            URL(fileURLWithPath: "/Library/LaunchAgents"),
+            URL(fileURLWithPath: "/Library/LaunchDaemons")
+        ]
+        
+        for dir in paths {
+            var isDirectory: ObjCBool = false
+            if fileManager.fileExists(atPath: dir.path, isDirectory: &isDirectory), isDirectory.boolValue {
+                do {
+                    let contents = try fileManager.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey], options: .skipsHiddenFiles)
+                    for url in contents where url.pathExtension == "plist" {
+                        let name = url.deletingPathExtension().lastPathComponent
+                        let bundleSize = allocatedSizeOfDirectory(at: url)
+                        let icon = NSWorkspace.shared.icon(for: .unixExecutable)
+                        
+                        let app = AppInfo(
+                            name: name,
+                            bundleIdentifier: name,
+                            path: url,
+                            icon: icon,
+                            bundleSize: bundleSize,
+                            isSystemApp: false,
+                            type: .startup,
+                            brewServiceName: nil,
+                            relatedFiles: [],
+                            totalSize: bundleSize
+                        )
+                        startupApps.append(app)
+                    }
+                } catch {
+                    print("Error scanning startup dir \(dir.path): \(error)")
+                }
+            }
+        }
+        return startupApps
     }
     
     private func getBrewPrefix() -> String {

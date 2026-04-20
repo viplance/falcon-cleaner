@@ -4,6 +4,7 @@ import AppKit
 enum AppType {
     case standard
     case brew
+    case startup
 }
 
 struct AppInfo: Identifiable, Hashable {

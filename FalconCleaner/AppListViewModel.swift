@@ -6,6 +6,7 @@ enum AppCategory: String, CaseIterable, Identifiable {
     case all = "All"
     case standard = "Applications"
     case brew = "Brew"
+    case startup = "Startup"
     var id: String { self.rawValue }
 }
 
@@ -28,6 +29,8 @@ class AppListViewModel: ObservableObject {
             categoryApps = apps.filter { $0.type == .standard }
         case .brew:
             categoryApps = apps.filter { $0.type == .brew }
+        case .startup:
+            categoryApps = apps.filter { $0.type == .startup }
         }
         
         if searchText.isEmpty {
@@ -89,7 +92,7 @@ class AppListViewModel: ObservableObject {
                 let used = capacity - available
                 let usedGB = Double(used) / 1_000_000_000.0
                 let totalGB = Double(capacity) / 1_000_000_000.0
-                return String(format: "%.1f from %.0f GB", usedGB, totalGB)
+                return String(format: "Disk usage: %.1f from %.0f GB", usedGB, totalGB)
             }
         } catch {
             print("Error retrieving capacity: \(error.localizedDescription)")

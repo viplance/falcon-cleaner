@@ -15,6 +15,7 @@ struct ContentView: View {
                             case .all: return "circle.grid.2x2.fill"
                             case .standard: return "app.fill"
                             case .brew: return "terminal"
+                            case .startup: return "bolt.fill"
                             }
                         }()
                     )
