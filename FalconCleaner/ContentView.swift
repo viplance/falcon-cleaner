@@ -38,6 +38,12 @@ struct ContentView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    
+                    Spacer()
+                    
+                    Text(viewModel.diskUsageInfo)
+                        .foregroundColor(.secondary)
+                        .font(.subheadline)
                 }
                 .padding(10)
                 .background(Color(NSColor.controlBackgroundColor).opacity(0.8))

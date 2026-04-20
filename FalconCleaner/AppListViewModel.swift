@@ -80,4 +80,20 @@ class AppListViewModel: ObservableObject {
     func deselectAll() {
         selectedApps.removeAll()
     }
+    
+    var diskUsageInfo: String {
+        let fileURL = URL(fileURLWithPath: "/")
+        do {
+            let values = try fileURL.resourceValues(forKeys: [.volumeAvailableCapacityKey, .volumeTotalCapacityKey])
+            if let capacity = values.volumeTotalCapacity, let available = values.volumeAvailableCapacity {
+                let used = capacity - available
+                let usedGB = Double(used) / 1_000_000_000.0
+                let totalGB = Double(capacity) / 1_000_000_000.0
+                return String(format: "%.1f from %.0f GB", usedGB, totalGB)
+            }
+        } catch {
+            print("Error retrieving capacity: \(error.localizedDescription)")
+        }
+        return ""
+    }
 }
