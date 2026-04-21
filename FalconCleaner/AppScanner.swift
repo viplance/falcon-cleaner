@@ -10,7 +10,8 @@ class AppScanner {
     func scanInstalledApps() async -> [AppInfo] {
         let appDirs = [
             URL(fileURLWithPath: "/Applications"),
-            fileManager.urls(for: .applicationDirectory, in: .userDomainMask).first
+            fileManager.urls(for: .applicationDirectory, in: .userDomainMask).first,
+            URL(fileURLWithPath: "/Library/Application Support/Microsoft/MAU2.0")
         ].compactMap { $0 }
         
         var apps: [AppInfo] = []
