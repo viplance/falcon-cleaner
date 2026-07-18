@@ -29,6 +29,11 @@ class AppListViewModel: ObservableObject {
     @Published var searchText: String = ""
     @Published var selectedCategory: AppCategory = .all
     @Published var sortOption: SortOption = .size
+    @Published private(set) var isHomebrewInstalled: Bool = AppScanner.isHomebrewInstalled()
+
+    var availableCategories: [AppCategory] {
+        AppCategory.allCases.filter { isHomebrewInstalled || $0 != .brew }
+    }
 
     var filteredApps: [AppInfo] {
         let categoryApps: [AppInfo]
@@ -76,11 +81,17 @@ class AppListViewModel: ObservableObject {
     func scan() async {
         isScanning = true
         progressMessage = "Scanning for applications..."
+        isHomebrewInstalled = await Task.detached { AppScanner.isHomebrewInstalled() }.value
+        if !isHomebrewInstalled, selectedCategory == .brew {
+            selectedCategory = .all
+        }
         // Task.detached guarantees the whole scan (incl. its heavy synchronous prologue)
         // runs off the main thread, so the UI never freezes.
         apps = await Task.detached { await AppScanner.shared.scanInstalledApps() }.value
         // Prefetch Homebrew descriptions once so hovering a package is instant.
-        BrewInspector.shared.prefetchAll(apps.filter { $0.type == .brew }.map { $0.name })
+        if isHomebrewInstalled {
+            BrewInspector.shared.prefetchAll(apps.filter { $0.type == .brew }.map { $0.name })
+        }
         isScanning = false
         hasScanned = true
         progressMessage = ""

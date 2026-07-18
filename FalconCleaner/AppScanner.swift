@@ -8,6 +8,10 @@ nonisolated final class AppScanner {
     static let shared = AppScanner()
     
     private let fileManager = FileManager.default
+
+    static func isHomebrewInstalled() -> Bool {
+        brewBinaryPath() != nil
+    }
     
     func scanInstalledApps() async -> [AppInfo] {
         let appDirs = [
@@ -36,8 +40,10 @@ nonisolated final class AppScanner {
         }
         
         // 2. Scan Brew Apps & Services
-        let brewApps = await scanBrewApps()
-        apps.append(contentsOf: brewApps)
+        if Self.isHomebrewInstalled() {
+            let brewApps = await scanBrewApps()
+            apps.append(contentsOf: brewApps)
+        }
         
         // 3. Scan Startup Scripts
         let startupApps = scanStartupScripts()
@@ -216,12 +222,16 @@ nonisolated final class AppScanner {
         return services
     }
     
-    private func getBrewBinaryPath() -> String {
+    private static func brewBinaryPath() -> String? {
         let paths = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew", "/usr/bin/brew"]
         for p in paths {
-            if fileManager.fileExists(atPath: p) { return p }
+            if FileManager.default.fileExists(atPath: p) { return p }
         }
-        return "brew" // fallback to env
+        return nil
+    }
+
+    private func getBrewBinaryPath() -> String {
+        Self.brewBinaryPath() ?? "brew" // fallback to env for legacy scan behavior
     }
     
     private func extractAppInfo(from url: URL) -> AppInfo? {

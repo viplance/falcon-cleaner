@@ -6,7 +6,7 @@ struct ContentView: View {
     
     var body: some View {
         NavigationSplitView {
-            List(AppCategory.allCases, selection: $viewModel.selectedCategory) { category in
+            List(viewModel.availableCategories, selection: $viewModel.selectedCategory) { category in
                 NavigationLink(value: category) {
                     Label(
                         category.rawValue,
