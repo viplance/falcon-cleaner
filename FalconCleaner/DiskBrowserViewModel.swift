@@ -41,6 +41,14 @@ final class DiskBrowserViewModel: ObservableObject {
 
     var canGoUp: Bool { currentURL.path != "/" }
 
+    /// Auto-sizing is limited to the user's home subtree. Elsewhere (/, /System, /Users of
+    /// other accounts) recursive sizing scans the entire disk via firmlinks and is anyway
+    /// permission-limited, so we only show item counts there.
+    var isWithinHome: Bool {
+        let home = homeURL.path
+        return currentURL.path == home || currentURL.path.hasPrefix(home + "/")
+    }
+
     /// Path components from root to the current folder, for the breadcrumb bar.
     /// Built from `pathComponents` (finite) — a previous while-loop version could spin
     /// forever on some URLs, blowing up memory and hanging the UI.
@@ -71,7 +79,9 @@ final class DiskBrowserViewModel: ObservableObject {
             guard url == self.currentURL else { return }  // navigated away meanwhile
             self.entries = list
             self.isLoading = false
-            self.calculateSizes()   // start sizing automatically
+            // Auto-size, but only inside the home tree — at the root the firmlinked system
+            // volume would make it scan the whole disk and freeze.
+            if self.isWithinHome { self.calculateSizes() }
         }
     }
 
@@ -81,7 +91,7 @@ final class DiskBrowserViewModel: ObservableObject {
         let folders = entries.filter { $0.isDirectory && $0.folderSize == nil }.map { ($0.id, $0.url) }
         guard !folders.isEmpty else { return }
         isCalculatingSizes = true
-        sizeTask = Task.detached(priority: .utility) { [weak self] in
+        sizeTask = Task.detached(priority: .background) { [weak self] in
             for (id, url) in folders {
                 if Task.isCancelled { break }
                 let modDate = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate

@@ -2,7 +2,9 @@ import Foundation
 import AppKit
 import UniformTypeIdentifiers
 
-class AppScanner {
+// nonisolated so the heavy scan (bundle sizes, brew subprocesses, Library lookups) runs off
+// the main thread instead of freezing the UI — the project defaults types to @MainActor.
+nonisolated final class AppScanner {
     static let shared = AppScanner()
     
     private let fileManager = FileManager.default

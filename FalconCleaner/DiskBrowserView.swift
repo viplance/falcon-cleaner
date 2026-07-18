@@ -133,6 +133,7 @@ struct DiskBrowserView: View {
             .background(.ultraThinMaterial)
         }
         .task { if viewModel.entries.isEmpty { viewModel.load() } }
+        .onDisappear { viewModel.cancelSizeCalculation() }
         .alert("Move to Trash", isPresented: $showingDeleteConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Move to Trash", role: .destructive) {

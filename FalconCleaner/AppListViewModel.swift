@@ -76,7 +76,9 @@ class AppListViewModel: ObservableObject {
     func scan() async {
         isScanning = true
         progressMessage = "Scanning for applications..."
-        apps = await AppScanner.shared.scanInstalledApps()
+        // Task.detached guarantees the whole scan (incl. its heavy synchronous prologue)
+        // runs off the main thread, so the UI never freezes.
+        apps = await Task.detached { await AppScanner.shared.scanInstalledApps() }.value
         // Prefetch Homebrew descriptions once so hovering a package is instant.
         BrewInspector.shared.prefetchAll(apps.filter { $0.type == .brew }.map { $0.name })
         isScanning = false
