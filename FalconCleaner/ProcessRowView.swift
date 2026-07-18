@@ -6,10 +6,11 @@ struct ProcessRowView: View {
     let isSelected: Bool
     let toggleSelection: () -> Void
 
-    private var cpuColor: Color {
-        switch process.cpu {
-        case 50...: return .red
-        case 20..<50: return .orange
+    // Highlight is based on per-core load (top's %CPU), which flags a process pegging a core.
+    private var coreCPUColor: Color {
+        switch process.coreCPU {
+        case 80...: return .red
+        case 40..<80: return .orange
         default: return .primary
         }
     }
@@ -56,17 +57,28 @@ struct ProcessRowView: View {
             Spacer()
 
             HStack(spacing: 20) {
-                // CPU
+                // CPU core — load on a single core (can exceed 100%); drives the highlight.
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(String(format: "%.1f%%", process.cpu))
+                    Text(String(format: "%.1f%%", process.coreCPU))
                         .font(.subheadline)
                         .fontWeight(highlight == .cpu ? .bold : .medium)
-                        .foregroundColor(cpuColor)
-                    Text("CPU")
+                        .foregroundColor(coreCPUColor)
+                    Text("CPU core")
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundColor(.secondary)
                 }
                 .frame(width: 70, alignment: .trailing)
+
+                // CPU — share of the whole machine (normalized across all cores).
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(String(format: "%.1f%%", process.cpu))
+                        .font(.subheadline)
+                        .fontWeight(highlight == .cpu ? .bold : .medium)
+                    Text("CPU")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(.secondary)
+                }
+                .frame(width: 60, alignment: .trailing)
 
                 // Memory
                 VStack(alignment: .trailing, spacing: 2) {

@@ -164,6 +164,7 @@ struct ContentView: View {
             }
         }
         .task {
+            CPUAlertMonitor.shared.start()
             await viewModel.scan()
         }
         .alert("Confirm Clean Up", isPresented: $showingConfirmation) {

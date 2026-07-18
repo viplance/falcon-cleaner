@@ -5,7 +5,8 @@ import AppKit
 struct SystemProcess: Identifiable, Equatable {
     let id: Int32          // pid
     let name: String
-    let cpu: Double        // percent (instantaneous, from top's second sample)
+    let cpu: Double        // percent of the whole machine (normalized across all cores)
+    let coreCPU: Double    // percent of a single core (top's raw %CPU, can exceed 100%)
     let memory: Int64      // resident memory in bytes
     let icon: NSImage?
     let isApp: Bool        // true when it maps to a running GUI application
@@ -36,12 +37,16 @@ struct SystemLoad: Equatable {
     let cpuUsedPercent: Double   // user + sys (i.e. 100 - idle)
     let memoryUsed: Int64
     let memoryTotal: Int64
+    let coreCount: Int
 
-    static let zero = SystemLoad(cpuUsedPercent: 0, memoryUsed: 0, memoryTotal: 0)
+    static let zero = SystemLoad(cpuUsedPercent: 0, memoryUsed: 0, memoryTotal: 0, coreCount: 0)
 
     var summary: String {
         let used = ByteCountFormatter.string(fromByteCount: memoryUsed, countStyle: .memory)
         let total = ByteCountFormatter.string(fromByteCount: memoryTotal, countStyle: .memory)
-        return String(format: "CPU %.0f%%  ·  Memory %@ / %@", cpuUsedPercent, used, total)
+        let cpuPart = coreCount > 0
+            ? String(format: "CPU %.0f%% of %d cores", cpuUsedPercent, coreCount)
+            : String(format: "CPU %.0f%%", cpuUsedPercent)
+        return "\(cpuPart)  ·  Memory \(used) / \(total)"
     }
 }

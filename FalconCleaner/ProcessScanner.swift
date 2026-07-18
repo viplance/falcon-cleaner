@@ -111,6 +111,7 @@ final class ProcessScanner {
             let line = lines[index].trimmingCharacters(in: .whitespaces)
             if line.isEmpty { continue }
             // Columns: pid cpu mem command(may contain spaces, always last).
+            // cpu here is top's per-core %CPU (relative to a single core, can exceed 100%).
             let columns = line.split(separator: " ", omittingEmptySubsequences: true)
             guard columns.count >= 4, let pid = Int32(columns[0]) else { continue }
             let cpu = Double(columns[1]) ?? 0
@@ -152,7 +153,10 @@ final class ProcessScanner {
             }
         }
 
-        return SystemLoad(cpuUsedPercent: cpuUsed, memoryUsed: memUsed, memoryTotal: memUsed + memUnused)
+        return SystemLoad(cpuUsedPercent: cpuUsed,
+                          memoryUsed: memUsed,
+                          memoryTotal: memUsed + memUnused,
+                          coreCount: ProcessInfo.processInfo.activeProcessorCount)
     }
 
     /// Converts top's memory strings (e.g. "1334M", "4912K", "2G", "154M-") to bytes.
@@ -185,8 +189,12 @@ final class ProcessScanner {
             appsByPid[app.processIdentifier] = app
         }
 
+        // Normalize per-core %CPU to a share of the whole machine for the "CPU" column.
+        let coreCount = Double(max(1, ProcessInfo.processInfo.activeProcessorCount))
+
         return items.map { item in
             let path = paths[item.pid]
+            let machineCPU = item.cpu / coreCount
             if let app = appsByPid[item.pid] {
                 var category: String?
                 var developer: String?
@@ -197,7 +205,8 @@ final class ProcessScanner {
                 return SystemProcess(
                     id: item.pid,
                     name: app.localizedName ?? item.name,
-                    cpu: item.cpu,
+                    cpu: machineCPU,
+                    coreCPU: item.cpu,
                     memory: item.memory,
                     icon: app.icon,
                     isApp: true,
@@ -209,7 +218,8 @@ final class ProcessScanner {
                 return SystemProcess(
                     id: item.pid,
                     name: item.name,
-                    cpu: item.cpu,
+                    cpu: machineCPU,
+                    coreCPU: item.cpu,
                     memory: item.memory,
                     icon: nil,
                     isApp: false,
