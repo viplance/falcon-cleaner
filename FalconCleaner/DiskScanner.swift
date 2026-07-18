@@ -46,6 +46,10 @@ nonisolated final class DiskScanner {
     /// Recursive allocated size of a directory. The scan deliberately yields between small I/O
     /// batches so antivirus/Spotlight and the UI are not starved by a long directory walk.
     func directorySize(_ url: URL, isCancelled: () -> Bool = { false }) async -> Int64 {
+        if let size = await directorySizeUsingDU(url, isCancelled: isCancelled) {
+            return size
+        }
+
         let keys: Set<URLResourceKey> = [.isRegularFileKey, .totalFileAllocatedSizeKey, .fileAllocatedSizeKey]
         // Count everything the way Finder's "Get Info" does: include hidden files (e.g.
         // ~/.orbstack, ~/.docker, caches) and the contents of packages/.app bundles. Skipping
@@ -79,5 +83,40 @@ nonisolated final class DiskScanner {
             }
         }
         return size
+    }
+
+    private func directorySizeUsingDU(_ url: URL, isCancelled: () -> Bool) async -> Int64? {
+        if isCancelled() { return nil }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/du")
+        process.arguments = ["-sk", url.path]
+
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+
+        while process.isRunning {
+            if isCancelled() {
+                process.terminate()
+                process.waitUntilExit()
+                return nil
+            }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        guard let text = String(data: data, encoding: .utf8) else { return nil }
+        guard let kilobytesText = text.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" }).first,
+              let kilobytes = Int64(kilobytesText) else {
+            return nil
+        }
+        return kilobytes * 1024
     }
 }
