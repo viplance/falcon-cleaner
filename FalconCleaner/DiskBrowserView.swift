@@ -87,6 +87,7 @@ struct DiskBrowserView: View {
                                 DiskRowView(
                                     entry: entry,
                                     isSelected: viewModel.selected.contains(entry.id),
+                                    isCalculatingSize: viewModel.currentSizingFolderID == entry.id,
                                     toggleSelection: { viewModel.toggleSelection(entry.id) },
                                     open: { viewModel.open(entry) }
                                 )

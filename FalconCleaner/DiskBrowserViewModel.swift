@@ -30,6 +30,7 @@ final class DiskBrowserViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var isDeleting = false
     @Published var isCalculatingSizes = false
+    @Published var currentSizingFolderID: String?
     @Published var statusMessage = ""
 
     private let homeURL = FileManager.default.homeDirectoryForCurrentUser
@@ -72,6 +73,7 @@ final class DiskBrowserViewModel: ObservableObject {
         sizeTask?.cancel()
         sizeScanID = UUID()
         isCalculatingSizes = false
+        currentSizingFolderID = nil
         selected.removeAll()
         statusMessage = ""
         isLoading = true
@@ -102,6 +104,10 @@ final class DiskBrowserViewModel: ObservableObject {
             if Task.isCancelled { return }
             for (id, url) in folders {
                 if Task.isCancelled { break }
+                await MainActor.run { [weak self] in
+                    guard let self, self.sizeScanID == scanID else { return }
+                    self.currentSizingFolderID = id
+                }
                 let modDate = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
                 let size = await DiskScanner.shared.directorySize(url, isCancelled: { Task.isCancelled })
                 if Task.isCancelled { break }
@@ -118,6 +124,7 @@ final class DiskBrowserViewModel: ObservableObject {
             await MainActor.run { [weak self] in
                 guard let self, self.sizeScanID == scanID else { return }
                 self.isCalculatingSizes = false
+                self.currentSizingFolderID = nil
             }
         }
     }
@@ -126,6 +133,7 @@ final class DiskBrowserViewModel: ObservableObject {
         sizeTask?.cancel()
         sizeScanID = UUID()
         isCalculatingSizes = false
+        currentSizingFolderID = nil
     }
 
     func open(_ entry: DiskEntry) {

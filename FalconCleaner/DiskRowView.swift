@@ -3,6 +3,7 @@ import SwiftUI
 struct DiskRowView: View {
     let entry: DiskEntry
     let isSelected: Bool
+    let isCalculatingSize: Bool
     let toggleSelection: () -> Void
     let open: () -> Void
 
@@ -50,9 +51,14 @@ struct DiskRowView: View {
                         .fontWeight(.medium)
                         .foregroundColor(.secondary)
                 } else {
-                    // Folder size still being computed.
-                    Text("—")
-                        .foregroundColor(.secondary.opacity(0.4))
+                    if isCalculatingSize {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        // Folder size is queued or not available yet.
+                        Text("—")
+                            .foregroundColor(.secondary.opacity(0.4))
+                    }
                 }
             }
             .font(.subheadline)
