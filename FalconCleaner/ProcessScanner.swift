@@ -19,10 +19,45 @@ final class ProcessScanner {
     }
 
     func scan() async -> ScanResult {
-        let output = await runTop()
-        let (raw, load) = parse(output)
-        let processes = await MainActor.run { attachAppInfo(raw) }
+        async let topOutput = runTop()
+        async let pathMap = runPS()
+        let (raw, load) = parse(await topOutput)
+        let paths = await pathMap
+        let processes = await MainActor.run { attachAppInfo(raw, paths: paths) }
         return ScanResult(processes: processes, load: load)
+    }
+
+    /// Maps pid -> full executable path via `ps` (works for root-owned processes too).
+    private func runPS() async -> [Int32: String] {
+        let output: String = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/ps")
+                process.arguments = ["-axo", "pid=,comm=", "-ww"]
+                let pipe = Pipe()
+                process.standardOutput = pipe
+                process.standardError = Pipe()
+                do {
+                    try process.run()
+                } catch {
+                    continuation.resume(returning: "")
+                    return
+                }
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                continuation.resume(returning: String(data: data, encoding: .utf8) ?? "")
+            }
+        }
+
+        var map: [Int32: String] = [:]
+        for line in output.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard let spaceIndex = trimmed.firstIndex(of: " ") else { continue }
+            guard let pid = Int32(trimmed[..<spaceIndex]) else { continue }
+            let path = trimmed[trimmed.index(after: spaceIndex)...].trimmingCharacters(in: .whitespaces)
+            if !path.isEmpty { map[pid] = path }
+        }
+        return map
     }
 
     // MARK: - Running top
@@ -144,21 +179,31 @@ final class ProcessScanner {
     // MARK: - App enrichment
 
     @MainActor
-    private func attachAppInfo(_ items: [RawProcess]) -> [SystemProcess] {
+    private func attachAppInfo(_ items: [RawProcess], paths: [Int32: String]) -> [SystemProcess] {
         var appsByPid: [Int32: NSRunningApplication] = [:]
         for app in NSWorkspace.shared.runningApplications {
             appsByPid[app.processIdentifier] = app
         }
 
         return items.map { item in
+            let path = paths[item.pid]
             if let app = appsByPid[item.pid] {
+                var category: String?
+                var developer: String?
+                if let bundleURL = app.bundleURL, let bundle = Bundle(url: bundleURL) {
+                    category = humanCategory(bundle.object(forInfoDictionaryKey: "LSApplicationCategoryType") as? String)
+                    developer = vendorFromCopyright(bundle.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String)
+                }
                 return SystemProcess(
                     id: item.pid,
                     name: app.localizedName ?? item.name,
                     cpu: item.cpu,
                     memory: item.memory,
                     icon: app.icon,
-                    isApp: true
+                    isApp: true,
+                    category: category,
+                    developer: developer,
+                    executablePath: path
                 )
             } else {
                 return SystemProcess(
@@ -167,7 +212,8 @@ final class ProcessScanner {
                     cpu: item.cpu,
                     memory: item.memory,
                     icon: nil,
-                    isApp: false
+                    isApp: false,
+                    executablePath: path
                 )
             }
         }

@@ -112,8 +112,27 @@ class AppScanner {
                     for url in contents where url.pathExtension == "plist" {
                         let name = url.deletingPathExtension().lastPathComponent
                         let bundleSize = allocatedSizeOfDirectory(at: url)
-                        let icon = NSWorkspace.shared.icon(for: .unixExecutable)
-                        
+
+                        // The executable this launch item runs (for icon/vendor/description).
+                        var programPath: String?
+                        if let dict = NSDictionary(contentsOf: url) {
+                            programPath = dict["Program"] as? String
+                                ?? (dict["ProgramArguments"] as? [String])?.first
+                        }
+
+                        // Prefer the parent app's icon when the program lives inside a .app.
+                        var icon = NSWorkspace.shared.icon(for: .unixExecutable)
+                        if let programPath = programPath {
+                            if let range = programPath.range(of: ".app/") {
+                                let appPath = String(programPath[..<range.lowerBound]) + ".app"
+                                if fileManager.fileExists(atPath: appPath) {
+                                    icon = NSWorkspace.shared.icon(forFile: appPath)
+                                }
+                            } else if fileManager.fileExists(atPath: programPath) {
+                                icon = NSWorkspace.shared.icon(forFile: programPath)
+                            }
+                        }
+
                         let app = AppInfo(
                             name: name,
                             bundleIdentifier: name,
@@ -124,7 +143,8 @@ class AppScanner {
                             type: .startup,
                             brewServiceName: nil,
                             relatedFiles: [],
-                            totalSize: bundleSize
+                            totalSize: bundleSize,
+                            launchProgramPath: programPath
                         )
                         startupApps.append(app)
                     }
@@ -224,6 +244,10 @@ class AppScanner {
         }
         let relatedSize = relatedFiles.reduce(0) { $0 + allocatedSizeOfDirectory(at: $1) }
 
+        let category = humanCategory(bundle.object(forInfoDictionaryKey: "LSApplicationCategoryType") as? String)
+        let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let developer = vendorFromCopyright(bundle.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String)
+
         let app = AppInfo(
             name: name,
             bundleIdentifier: bundleIdentifier,
@@ -234,9 +258,12 @@ class AppScanner {
             type: .standard,
             brewServiceName: nil,
             relatedFiles: relatedFiles,
-            totalSize: bundleSize + relatedSize
+            totalSize: bundleSize + relatedSize,
+            category: category,
+            version: version,
+            developer: developer
         )
-        
+
         return app
     }
 

@@ -14,7 +14,14 @@ struct AppRowView: View {
             .toggleStyle(CheckboxToggleStyle())
             .labelsHidden()
             
-            if let icon = app.icon {
+            if app.type == .brew {
+                Image(systemName: "mug.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 26, height: 26)
+                    .frame(width: 40, height: 40)
+                    .foregroundColor(.brown)
+            } else if let icon = app.icon {
                 Image(nsImage: icon)
                     .resizable()
                     .frame(width: 40, height: 40)
@@ -26,9 +33,14 @@ struct AppRowView: View {
             }
             
             VStack(alignment: .leading, spacing: 2) {
-                Text(app.name)
-                    .font(.headline)
-                
+                HStack(spacing: 4) {
+                    Text(app.name)
+                        .font(.headline)
+                        .lineLimit(1)
+
+                    AppInfoHint(app: app)
+                }
+
                 Text(app.bundleIdentifier ?? "Unknown bundle ID")
                     .font(.caption)
                     .foregroundColor(.secondary)

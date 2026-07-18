@@ -74,6 +74,8 @@ class AppListViewModel: ObservableObject {
         isScanning = true
         progressMessage = "Scanning for applications..."
         apps = await AppScanner.shared.scanInstalledApps()
+        // Prefetch Homebrew descriptions once so hovering a package is instant.
+        BrewInspector.shared.prefetchAll(apps.filter { $0.type == .brew }.map { $0.name })
         isScanning = false
         hasScanned = true
         progressMessage = ""

@@ -41,9 +41,13 @@ struct ProcessRowView: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(process.name)
-                    .font(.headline)
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(process.name)
+                        .font(.headline)
+                        .lineLimit(1)
+
+                    ProcessInfoHint(process: process)
+                }
                 Text("PID \(process.pid)\(process.isApp ? " · App" : "")")
                     .font(.caption)
                     .foregroundColor(.secondary)

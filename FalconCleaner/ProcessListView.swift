@@ -85,6 +85,9 @@ struct ProcessListView: View {
                         }
                         .padding(.top, 8)
                     }
+                    .onHover { hovering in
+                        viewModel.isHoveringList = hovering
+                    }
                 }
             }
 
@@ -138,7 +141,11 @@ struct ProcessListView: View {
             // Auto-refresh while the Processes section is visible.
             // Each scan already takes ~1s (top -l 2), then we pause before the next.
             while !Task.isCancelled {
-                await viewModel.refresh()
+                // Pause updates while the pointer is over the list so rows don't
+                // reorder out from under the cursor (keeps the info hint stable).
+                if !viewModel.isHoveringList || !viewModel.hasLoaded {
+                    await viewModel.refresh()
+                }
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
             }
         }

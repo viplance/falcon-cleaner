@@ -15,6 +15,7 @@ final class ProcessListViewModel: ObservableObject {
     @Published var selectedProcesses: Set<Int32> = []
     @Published var isLoading: Bool = false
     @Published var isKilling: Bool = false
+    @Published var isHoveringList: Bool = false
     @Published var hasLoaded: Bool = false
     @Published var sortOption: ProcessSortOption = .cpu
     @Published var searchText: String = ""
