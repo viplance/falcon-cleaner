@@ -17,6 +17,7 @@ struct ContentView: View {
                             case .brew: return "terminal"
                             case .startup: return "bolt.fill"
                             case .processes: return "cpu"
+                            case .disk: return "internaldrive"
                             }
                         }()
                     )
@@ -30,6 +31,8 @@ struct ContentView: View {
         } detail: {
             if viewModel.selectedCategory == .processes {
                 ProcessListView()
+            } else if viewModel.selectedCategory == .disk {
+                DiskBrowserView()
             } else {
             VStack(spacing: 0) {
                 // Header / Search Bar

@@ -8,6 +8,7 @@ enum AppCategory: String, CaseIterable, Identifiable {
     case brew = "Brew"
     case startup = "Startup"
     case processes = "Processes"
+    case disk = "Disk"
     var id: String { self.rawValue }
 }
 
@@ -42,6 +43,8 @@ class AppListViewModel: ObservableObject {
             categoryApps = apps.filter { $0.type == .startup }
         case .processes:
             categoryApps = [] // handled by a dedicated Processes view, not the app list
+        case .disk:
+            categoryApps = [] // handled by a dedicated Disk browser, not the app list
         }
 
         let searchedApps: [AppInfo]
