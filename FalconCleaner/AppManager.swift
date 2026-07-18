@@ -38,7 +38,7 @@ class AppManager {
         return true
     }
     
-    func cleanup(app: AppInfo) async throws {
+    func cleanup(app: AppInfo, permanently: Bool = false) async throws {
         // 1. Stop app/service if running
         if app.type == .brew {
             if let serviceName = app.brewServiceName {
@@ -54,6 +54,13 @@ class AppManager {
         for fileURL in app.relatedFiles {
             unlockPath(fileURL)
         }
+
+        // 2b. Unload any associated launch agents/daemons so their jobs stop before
+        // we remove the plists (covers both the Startup category and startup items
+        // bundled with a standard app's related files).
+        for fileURL in ([app.path] + app.relatedFiles) where isLaunchItemPlist(fileURL) {
+            unloadLaunchItem(fileURL)
+        }
         
         // 3. Perform Type-Specific Cleanup
         if app.type == .brew {
@@ -61,32 +68,40 @@ class AppManager {
         }
         
         var failedURLs: [URL] = []
-        
-        // 4. Attempt standard trash for the main path (if it still exists after brew uninstall)
+
+        // 4 & 5. Remove the main path and related files.
+        // When `permanently` is set we delete outright (skipping the Trash); otherwise
+        // we move to the Trash. Only existing paths are touched (brew uninstall may have
+        // already removed the bundle).
+        var targets: [URL] = []
         if fileManager.fileExists(atPath: app.path.path) {
+            targets.append(app.path)
+        }
+        for fileURL in app.relatedFiles where fileManager.fileExists(atPath: fileURL.path) {
+            targets.append(fileURL)
+        }
+
+        for url in targets {
             do {
-                try fileManager.trashItem(at: app.path, resultingItemURL: nil)
-            } catch {
-                print("Trash failed for \(app.name), staging for AppleScript: \(error)")
-                failedURLs.append(app.path)
-            }
-        }
-        
-        // 5. Attempt standard trash for related files
-        for fileURL in app.relatedFiles {
-            if fileManager.fileExists(atPath: fileURL.path) {
-                do {
-                    try fileManager.trashItem(at: fileURL, resultingItemURL: nil)
-                } catch {
-                    print("Standard trash failed for related file \(fileURL.lastPathComponent), staging for AppleScript")
-                    failedURLs.append(fileURL)
+                if permanently {
+                    try fileManager.removeItem(at: url)
+                } else {
+                    try fileManager.trashItem(at: url, resultingItemURL: nil)
                 }
+            } catch {
+                print("\(permanently ? "Delete" : "Trash") failed for \(url.lastPathComponent), staging for fallback: \(error)")
+                failedURLs.append(url)
             }
         }
-        
-        // 6. AppleScript Fallback for all failed items
+
+        // 6. Fallback for items that failed the standard removal (typically root-owned
+        // bundles like /Applications/zoom.us.app or launch daemons under /Library).
         if !failedURLs.isEmpty {
-            if !moveWithAppleScript(urls: failedURLs) {
+            if permanently {
+                if !privilegedRemove(urls: failedURLs) {
+                    print("Privileged removal failed/cancelled for \(app.name)")
+                }
+            } else if !moveWithAppleScript(urls: failedURLs) {
                 print("AppleScript batch fallback failed for \(app.name)")
             }
         }
@@ -128,6 +143,48 @@ class AppManager {
         process.waitUntilExit()
     }
     
+    private func isLaunchItemPlist(_ url: URL) -> Bool {
+        let path = url.path
+        return url.pathExtension == "plist"
+            && (path.contains("/LaunchAgents/") || path.contains("/LaunchDaemons/"))
+    }
+
+    private func unloadLaunchItem(_ url: URL) {
+        // Best-effort: stop the running job. User agents unload without privileges;
+        // system daemons may not, but removing the plist still prevents next-boot launch.
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        process.arguments = ["unload", url.path]
+        try? process.run()
+        process.waitUntilExit()
+    }
+
+    private func privilegedRemove(urls: [URL]) -> Bool {
+        // Permanently remove root-owned items the current user cannot delete directly.
+        // All paths are removed in a single `rm -rf`, so the admin prompt appears once.
+        guard !urls.isEmpty else { return true }
+
+        let quotedPaths = urls
+            .map { "'" + $0.path.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+            .joined(separator: " ")
+        let shellCommand = "/bin/rm -rf " + quotedPaths
+
+        // Escape for embedding inside an AppleScript double-quoted string.
+        let escaped = shellCommand
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let source = "do shell script \"\(escaped)\" with administrator privileges"
+
+        guard let script = NSAppleScript(source: source) else { return false }
+        var error: NSDictionary?
+        script.executeAndReturnError(&error)
+        if let error = error {
+            print("Privileged removal error: \(error)")
+            return false
+        }
+        return true
+    }
+
     private func moveWithAppleScript(urls: [URL]) -> Bool {
         let pathStrings = urls.map { "\"\($0.path.replacingOccurrences(of: "\"", with: "\\\""))\"" }.joined(separator: ", ")
         

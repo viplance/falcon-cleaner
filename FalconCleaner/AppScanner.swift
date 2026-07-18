@@ -215,9 +215,15 @@ class AppScanner {
         let icon = NSWorkspace.shared.icon(forFile: url.path)
         let bundleSize = allocatedSizeOfDirectory(at: url)
         
-        let relatedFiles = findRelatedFiles(forName: name, bundleIdentifier: bundleIdentifier)
+        var relatedFiles = findRelatedFiles(forName: name, bundleIdentifier: bundleIdentifier)
+        // Include associated startup items (LaunchAgents/LaunchDaemons) so they are
+        // removed together with the app.
+        for startupItem in findRelatedStartupItems(bundleIdentifier: bundleIdentifier, appPath: url)
+        where !relatedFiles.contains(startupItem) {
+            relatedFiles.append(startupItem)
+        }
         let relatedSize = relatedFiles.reduce(0) { $0 + allocatedSizeOfDirectory(at: $1) }
-        
+
         let app = AppInfo(
             name: name,
             bundleIdentifier: bundleIdentifier,
@@ -306,5 +312,86 @@ class AppScanner {
         }
         
         return related
+    }
+
+    /// Finds LaunchAgents/LaunchDaemons plists that belong to a given app, matched by
+    /// bundle identifier or by a program path that points inside the app bundle.
+    func findRelatedStartupItems(bundleIdentifier: String?, appPath: URL) -> [URL] {
+        let launchDirs = [
+            URL(fileURLWithPath: "\(NSHomeDirectory())/Library/LaunchAgents"),
+            URL(fileURLWithPath: "/Library/LaunchAgents"),
+            URL(fileURLWithPath: "/Library/LaunchDaemons")
+        ]
+        let appPathString = appPath.path
+
+        var items: [URL] = []
+        for dir in launchDirs {
+            guard let contents = try? fileManager.contentsOfDirectory(
+                at: dir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles
+            ) else { continue }
+
+            for url in contents where url.pathExtension == "plist" {
+                let dict = NSDictionary(contentsOf: url)
+                if plistBelongsToApp(url, dict: dict, bundleIdentifier: bundleIdentifier, appPathString: appPathString) {
+                    items.append(url)
+                    // Also remove the privileged helper binary the job launches, if any.
+                    for helper in helperExecutables(from: dict) where !items.contains(helper) {
+                        items.append(helper)
+                    }
+                }
+            }
+        }
+        return items
+    }
+
+    private func plistBelongsToApp(_ url: URL, dict: NSDictionary?, bundleIdentifier: String?, appPathString: String) -> Bool {
+        let label = url.deletingPathExtension().lastPathComponent
+
+        if let bid = bundleIdentifier, !bid.isEmpty {
+            // 1. Filename (label) matches the bundle identifier, e.g. "com.foo.Bar.helper.plist".
+            if label == bid || label.hasPrefix(bid + ".") {
+                return true
+            }
+
+            if let dict = dict {
+                // 2. AssociatedBundleIdentifiers explicitly lists the app (authoritative).
+                if let associated = dict["AssociatedBundleIdentifiers"] as? [String], associated.contains(bid) {
+                    return true
+                }
+                if let associated = dict["AssociatedBundleIdentifiers"] as? String, associated == bid {
+                    return true
+                }
+
+                // 3. The plist's Label matches the bundle identifier.
+                if let plistLabel = dict["Label"] as? String,
+                   plistLabel == bid || plistLabel.hasPrefix(bid + ".") {
+                    return true
+                }
+            }
+        }
+
+        // 4. Program / ProgramArguments point inside the app bundle (strongest path signal).
+        return programPaths(from: dict).contains { $0.hasPrefix(appPathString) }
+    }
+
+    private func programPaths(from dict: NSDictionary?) -> [String] {
+        guard let dict = dict else { return [] }
+        var paths: [String] = []
+        if let program = dict["Program"] as? String { paths.append(program) }
+        if let args = dict["ProgramArguments"] as? [String] { paths.append(contentsOf: args) }
+        return paths
+    }
+
+    /// Returns the privileged-helper executables a matched launch item runs, so they can be
+    /// removed alongside the plist (e.g. /Library/PrivilegedHelperTools/us.zoom.ZoomDaemon).
+    private func helperExecutables(from dict: NSDictionary?) -> [URL] {
+        var helpers: [URL] = []
+        for path in programPaths(from: dict) where path.hasPrefix("/Library/PrivilegedHelperTools/") {
+            let url = URL(fileURLWithPath: path)
+            if fileManager.fileExists(atPath: url.path), !helpers.contains(url) {
+                helpers.append(url)
+            }
+        }
+        return helpers
     }
 }

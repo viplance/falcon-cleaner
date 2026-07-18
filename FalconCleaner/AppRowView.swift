@@ -37,10 +37,13 @@ struct AppRowView: View {
             Spacer()
             
             VStack(alignment: .trailing, spacing: 2) {
-                Text(ByteCountFormatter.string(fromByteCount: app.totalSize, countStyle: .file))
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                
+                // Startup items have no meaningful size (always zero), so hide it.
+                if app.type != .startup {
+                    Text(ByteCountFormatter.string(fromByteCount: app.totalSize, countStyle: .file))
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                }
+
                 if app.isSystemApp {
                     Text("System App")
                         .font(.system(size: 10, weight: .bold))

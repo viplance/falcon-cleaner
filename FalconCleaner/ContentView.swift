@@ -16,14 +16,21 @@ struct ContentView: View {
                             case .standard: return "app.fill"
                             case .brew: return "terminal"
                             case .startup: return "bolt.fill"
+                            case .processes: return "cpu"
                             }
                         }()
                     )
+                    // Indent the sub-categories that "All" aggregates.
+                    .padding(.leading, (category == .standard || category == .brew || category == .startup) ? 16 : 0)
                 }
             }
             .listStyle(.sidebar)
-            .navigationTitle("FalconCleaner")
+            .navigationTitle("Falcon Cleaner")
+            .navigationSplitViewColumnWidth(min: 180, ideal: 185)
         } detail: {
+            if viewModel.selectedCategory == .processes {
+                ProcessListView()
+            } else {
             VStack(spacing: 0) {
                 // Header / Search Bar
                 HStack {
@@ -41,7 +48,27 @@ struct ContentView: View {
                     }
                     
                     Spacer()
-                    
+
+                    if viewModel.selectedCategory != .startup {
+                        Menu {
+                            ForEach(SortOption.allCases) { option in
+                                Button {
+                                    viewModel.sortOption = option
+                                } label: {
+                                    if viewModel.sortOption == option {
+                                        Label(option.rawValue, systemImage: "checkmark")
+                                    } else {
+                                        Text(option.rawValue)
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label("Sort: \(viewModel.sortOption.rawValue)", systemImage: "arrow.down")
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                    }
+
                     Text(viewModel.diskUsageInfo)
                         .foregroundColor(.secondary)
                         .font(.subheadline)
@@ -53,7 +80,7 @@ struct ContentView: View {
                 
                 // Content
                 ZStack {
-                    if viewModel.isScanning {
+                    if viewModel.isScanning || !viewModel.hasScanned {
                         VStack(spacing: 16) {
                             ProgressView()
                             Text("Scanning your Mac for apps...")
@@ -115,13 +142,13 @@ struct ContentView: View {
                     }
                     
                     Spacer()
-                    
+
                     Button("Deselect All") {
                         viewModel.deselectAll()
                     }
                     .buttonStyle(.link)
                     .disabled(viewModel.selectedApps.isEmpty || viewModel.isCleaning)
-                    
+
                     Button(action: { showingConfirmation = true }) {
                         Text("Clean Up")
                             .frame(width: 100)
@@ -134,20 +161,21 @@ struct ContentView: View {
                 .padding()
                 .background(.ultraThinMaterial)
             }
+            }
         }
         .task {
             await viewModel.scan()
         }
         .alert("Confirm Clean Up", isPresented: $showingConfirmation) {
             Button("Cancel", role: .cancel) { }
-            Button("Clean Up", role: .destructive) {
+            Button("Delete Permanently", role: .destructive) {
                 Task {
                     await viewModel.cleanupSelected()
                 }
             }
         } message: {
             let totalSelected = viewModel.apps.filter { viewModel.selectedApps.contains($0.id) }.count
-            Text("Are you sure you want to move \(totalSelected) applications and their related files to the Trash?")
+            Text("This will permanently delete \(totalSelected) applications and their related files, bypassing the Trash. This action cannot be undone.")
         }
     }
 }

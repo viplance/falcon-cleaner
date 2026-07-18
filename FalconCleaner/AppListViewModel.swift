@@ -7,6 +7,13 @@ enum AppCategory: String, CaseIterable, Identifiable {
     case standard = "Applications"
     case brew = "Brew"
     case startup = "Startup"
+    case processes = "Processes"
+    var id: String { self.rawValue }
+}
+
+enum SortOption: String, CaseIterable, Identifiable {
+    case size = "Size"
+    case name = "Name"
     var id: String { self.rawValue }
 }
 
@@ -15,11 +22,13 @@ class AppListViewModel: ObservableObject {
     @Published var apps: [AppInfo] = []
     @Published var selectedApps: Set<UUID> = []
     @Published var isScanning: Bool = false
+    @Published var hasScanned: Bool = false
     @Published var isCleaning: Bool = false
     @Published var progressMessage: String = ""
     @Published var searchText: String = ""
     @Published var selectedCategory: AppCategory = .all
-    
+    @Published var sortOption: SortOption = .size
+
     var filteredApps: [AppInfo] {
         let categoryApps: [AppInfo]
         switch selectedCategory {
@@ -31,12 +40,34 @@ class AppListViewModel: ObservableObject {
             categoryApps = apps.filter { $0.type == .brew }
         case .startup:
             categoryApps = apps.filter { $0.type == .startup }
+        case .processes:
+            categoryApps = [] // handled by a dedicated Processes view, not the app list
         }
-        
+
+        let searchedApps: [AppInfo]
         if searchText.isEmpty {
-            return categoryApps
+            searchedApps = categoryApps
+        } else {
+            searchedApps = categoryApps.filter { $0.name.localizedCaseInsensitiveContains(searchText) || ($0.bundleIdentifier?.localizedCaseInsensitiveContains(searchText) ?? false) }
         }
-        return categoryApps.filter { $0.name.localizedCaseInsensitiveContains(searchText) || ($0.bundleIdentifier?.localizedCaseInsensitiveContains(searchText) ?? false) }
+
+        return sorted(searchedApps)
+    }
+
+    private func sorted(_ apps: [AppInfo]) -> [AppInfo] {
+        // Startup items have no meaningful size, so they are always sorted by name.
+        let option: SortOption = selectedCategory == .startup ? .name : sortOption
+        switch option {
+        case .size:
+            // Largest to smallest; tie-break by name for stable ordering.
+            return apps.sorted {
+                $0.totalSize != $1.totalSize
+                    ? $0.totalSize > $1.totalSize
+                    : $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+        case .name:
+            return apps.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        }
     }
     
     func scan() async {
@@ -44,27 +75,32 @@ class AppListViewModel: ObservableObject {
         progressMessage = "Scanning for applications..."
         apps = await AppScanner.shared.scanInstalledApps()
         isScanning = false
+        hasScanned = true
         progressMessage = ""
     }
     
     func cleanupSelected() async {
         isCleaning = true
         let appsToCleanup = apps.filter { selectedApps.contains($0.id) }
-        
+        var failed: [String] = []
+
         for app in appsToCleanup {
             progressMessage = "Cleaning up \(app.name)..."
             do {
-                try await AppManager.shared.cleanup(app: app)
+                try await AppManager.shared.cleanup(app: app, permanently: true)
                 apps.removeAll { $0.id == app.id }
                 selectedApps.remove(app.id)
             } catch {
+                failed.append(app.name)
                 print("Failed to clean up \(app.name): \(error)")
             }
         }
-        
+
         isCleaning = false
-        progressMessage = "Cleanup finished!"
-        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        progressMessage = failed.isEmpty
+            ? "Cleanup finished!"
+            : "Could not remove: \(failed.joined(separator: ", "))"
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
         progressMessage = ""
     }
     

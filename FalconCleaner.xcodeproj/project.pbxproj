@@ -55,6 +55,7 @@
 				378E72E92F6C54010050EB3E /* Sources */,
 				378E72EA2F6C54010050EB3E /* Frameworks */,
 				378E72EB2F6C54010050EB3E /* Resources */,
+				37FAFA012F6C54020050EB3E /* Set CFBundleName */,
 			);
 			buildRules = (
 			);
@@ -113,6 +114,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		37FAFA012F6C54020050EB3E /* Set CFBundleName */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)",
+			);
+			name = "Set CFBundleName";
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/set_cfbundlename.stamp",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Override the auto-generated CFBundleName (forced from PRODUCT_NAME) with the\n# two-word display name, so the app menu and About window read \"Falcon Cleaner\".\n# input=Info.plist / output=stamp force this to run after ProcessInfoPlistFile and before CodeSign.\nPLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\n/usr/libexec/PlistBuddy -c \"Set :CFBundleName Falcon Cleaner\" \"$PLIST\" || \\\n  /usr/libexec/PlistBuddy -c \"Add :CFBundleName string Falcon Cleaner\" \"$PLIST\"\nmkdir -p \"$DERIVED_FILE_DIR\"\ntouch \"$DERIVED_FILE_DIR/set_cfbundlename.stamp\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		378E72E92F6C54010050EB3E /* Sources */ = {
@@ -260,7 +280,8 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "FalconCleaner needs permission to send Apple events to Finder to safely move applications to the Trash.";
+				INFOPLIST_KEY_CFBundleDisplayName = "Falcon Cleaner";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Falcon Cleaner needs permission to send Apple events to Finder to safely move applications to the Trash.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -294,7 +315,8 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "FalconCleaner needs permission to send Apple events to Finder to safely move applications to the Trash.";
+				INFOPLIST_KEY_CFBundleDisplayName = "Falcon Cleaner";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Falcon Cleaner needs permission to send Apple events to Finder to safely move applications to the Trash.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
