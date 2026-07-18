@@ -34,6 +34,7 @@ final class DiskBrowserViewModel: ObservableObject {
 
     private let homeURL = FileManager.default.homeDirectoryForCurrentUser
     private var sizeTask: Task<Void, Never>?
+    private var sizeScanID = UUID()
 
     init() {
         currentURL = FileManager.default.homeDirectoryForCurrentUser
@@ -69,6 +70,7 @@ final class DiskBrowserViewModel: ObservableObject {
 
     func load() {
         sizeTask?.cancel()
+        sizeScanID = UUID()
         isCalculatingSizes = false
         selected.removeAll()
         statusMessage = ""
@@ -85,32 +87,44 @@ final class DiskBrowserViewModel: ObservableObject {
         }
     }
 
-    /// Computes recursive sizes for the folders currently shown — on demand only, in the
-    /// background, one folder at a time, cancelled when navigating away.
+    /// Computes recursive sizes for the folders currently shown automatically in the background.
+    /// The task starts after the folder list has had a chance to render, then walks one folder at
+    /// a time with throttled I/O in `DiskScanner`.
     func calculateSizes() {
+        sizeTask?.cancel()
+        sizeScanID = UUID()
+        let scanID = sizeScanID
         let folders = entries.filter { $0.isDirectory && $0.folderSize == nil }.map { ($0.id, $0.url) }
         guard !folders.isEmpty else { return }
         isCalculatingSizes = true
         sizeTask = Task.detached(priority: .background) { [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            if Task.isCancelled { return }
             for (id, url) in folders {
                 if Task.isCancelled { break }
                 let modDate = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-                let size = DiskScanner.shared.directorySize(url, isCancelled: { Task.isCancelled })
+                let size = await DiskScanner.shared.directorySize(url, isCancelled: { Task.isCancelled })
                 if Task.isCancelled { break }
                 FolderSizeCache.shared.store(size, for: url.path, modDate: modDate)
-                await MainActor.run {
+                await MainActor.run { [weak self] in
                     guard let self else { return }
+                    guard self.sizeScanID == scanID else { return }
                     if let index = self.entries.firstIndex(where: { $0.id == id }) {
                         self.entries[index].folderSize = size
                     }
                 }
+                try? await Task.sleep(nanoseconds: 50_000_000)
             }
-            await MainActor.run { self?.isCalculatingSizes = false }
+            await MainActor.run { [weak self] in
+                guard let self, self.sizeScanID == scanID else { return }
+                self.isCalculatingSizes = false
+            }
         }
     }
 
     func cancelSizeCalculation() {
         sizeTask?.cancel()
+        sizeScanID = UUID()
         isCalculatingSizes = false
     }
 

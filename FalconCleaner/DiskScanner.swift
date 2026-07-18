@@ -1,7 +1,7 @@
 import Foundation
 
 /// Lists directory contents for the Disk browser — current level only, no recursion.
-final class DiskScanner {
+nonisolated final class DiskScanner {
     static let shared = DiskScanner()
     private let fileManager = FileManager.default
 
@@ -43,10 +43,9 @@ final class DiskScanner {
         }
     }
 
-    /// Recursive allocated size of a directory, computed only on demand. Each iteration runs
-    /// inside an `autoreleasepool` so transient URLs/resource values don't pile up (that was the
-    /// out-of-memory cause), and a hard file cap guards against runaway/cloud trees.
-    func directorySize(_ url: URL, isCancelled: () -> Bool = { false }) -> Int64 {
+    /// Recursive allocated size of a directory. The scan deliberately yields between small I/O
+    /// batches so antivirus/Spotlight and the UI are not starved by a long directory walk.
+    func directorySize(_ url: URL, isCancelled: () -> Bool = { false }) async -> Int64 {
         let keys: Set<URLResourceKey> = [.isRegularFileKey, .totalFileAllocatedSizeKey, .fileAllocatedSizeKey]
         // Count everything the way Finder's "Get Info" does: include hidden files (e.g.
         // ~/.orbstack, ~/.docker, caches) and the contents of packages/.app bundles. Skipping
@@ -65,7 +64,7 @@ final class DiskScanner {
             autoreleasepool {
                 guard let fileURL = enumerator.nextObject() as? URL else { stop = true; return }
                 counter += 1
-                if counter > maxFiles || (counter & 0x1FFF == 0 && isCancelled()) {
+                if counter > maxFiles || (counter & 0x1FF == 0 && isCancelled()) {
                     stop = true
                     return
                 }
@@ -73,6 +72,10 @@ final class DiskScanner {
                    values.isRegularFile ?? false {
                     size += Int64(values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? 0)
                 }
+            }
+            if (counter & 0x7FF) == 0 {
+                try? await Task.sleep(nanoseconds: 5_000_000)
+                if isCancelled() { stop = true }
             }
         }
         return size

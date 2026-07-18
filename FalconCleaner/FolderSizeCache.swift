@@ -5,8 +5,8 @@ import Foundation
 /// Note: a directory's modification date changes only when its *direct* children change
 /// (add/remove/rename), not when a file nested deeper is edited. So a cached size can be stale
 /// after a deep-nested change — an acceptable trade-off for a size browser, recoverable by
-/// recomputing (Folder sizes button).
-final class FolderSizeCache: @unchecked Sendable {
+/// recomputing in a later scan.
+nonisolated final class FolderSizeCache: @unchecked Sendable {
     static let shared = FolderSizeCache()
 
     private let lock = NSLock()
