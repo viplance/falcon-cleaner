@@ -1,11 +1,15 @@
 {
   "name": "falcon-cleaner",
-  "version": "1.1",
-  "description": "Falcon Cleaner",
+  "version": "1.1.0",
+  "description": "Falcon Cleaner — native macOS app uninstaller and disk cleanup utility.",
   "private": true,
+  "author": "Dzmitry Sharko",
+  "license": "MIT",
   "scripts": {
     "build:app": "xcodebuild -project FalconCleaner.xcodeproj -scheme FalconCleaner -configuration Release clean build SYMROOT=$(PWD)/build",
-    "build:dmg": "mkdir -p build/dmg_temp && cp -r build/Release/FalconCleaner.app build/dmg_temp/ && ln -s /Applications build/dmg_temp/Applications && hdiutil create -volname \"FalconCleaner Installer\" -srcfolder build/dmg_temp -ov -format UDZO build/FalconCleaner.dmg && rm -rf build/dmg_temp",
-    "build": "npm run build:app && npm run build:dmg"
+    "release": "node ./scripts/build-release.mjs",
+    "release:local": "node ./scripts/build-release.mjs --skip-notarize",
+    "build:appstore": "node ./scripts/build-appstore.mjs",
+    "clean": "rm -rf build .build"
   }
 }

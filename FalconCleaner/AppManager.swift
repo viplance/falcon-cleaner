@@ -163,6 +163,10 @@ class AppManager {
         // Permanently remove root-owned items the current user cannot delete directly.
         // All paths are removed in a single `rm -rf`, so the admin prompt appears once.
         guard !urls.isEmpty else { return true }
+#if APPSTORE
+        // Prohibited under the App Sandbox (App Review guideline 2.4.5).
+        return false
+#else
 
         let quotedPaths = urls
             .map { "'" + $0.path.replacingOccurrences(of: "'", with: "'\\''") + "'" }
@@ -183,6 +187,7 @@ class AppManager {
             return false
         }
         return true
+#endif
     }
 
     private func moveWithAppleScript(urls: [URL]) -> Bool {

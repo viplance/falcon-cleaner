@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  App Store entitlement set. Must be paired with the App Store provisioning
+	  profile embedded at Contents/embedded.provisionprofile.
+
+	  The App Sandbox is mandatory here. Under it the privileged features of
+	  Falcon Cleaner do not function: uninstalling other applications,
+	  terminating processes, running brew/du/launchctl, and requesting
+	  administrator privileges are all denied at runtime. Those code paths are
+	  compiled out via the APPSTORE flag so the sandboxed build degrades
+	  visibly instead of silently failing.
+
+	  Local Developer ID builds use FalconCleaner/FalconCleaner.entitlements.
+	-->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+
+	<key>com.apple.developer.team-identifier</key>
+	<string>W37L5728Y6</string>
+
+	<!-- Folders the user explicitly picks are the only readable locations. -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+</dict>
+</plist>

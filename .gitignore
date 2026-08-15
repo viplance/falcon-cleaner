@@ -10,3 +10,10 @@ xcuserdata/
 
 # Node
 node_modules/
+
+# Release artifacts
+dist/
+*.dmg
+*.xcarchive
+*.mobileprovision
+*.provisionprofile

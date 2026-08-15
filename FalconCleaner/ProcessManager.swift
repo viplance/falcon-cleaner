@@ -19,9 +19,15 @@ final class ProcessManager {
     }
 
     /// Kills the given pids via a single admin authorization prompt.
+    ///
+    /// Unavailable in App Store builds: requesting administrator privileges is
+    /// prohibited under the App Sandbox (App Review guideline 2.4.5).
     @discardableResult
     func privilegedKill(pids: [Int32]) -> Bool {
         guard !pids.isEmpty else { return true }
+#if APPSTORE
+        return false
+#else
         let list = pids.map(String.init).joined(separator: " ")
         let source = "do shell script \"/bin/kill -9 \(list)\" with administrator privileges"
 
@@ -33,5 +39,6 @@ final class ProcessManager {
             return false
         }
         return true
+#endif
     }
 }

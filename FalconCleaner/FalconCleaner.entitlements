@@ -2,11 +2,29 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!--
+	  Falcon Cleaner is distributed outside the Mac App Store (Developer ID +
+	  notarization). The App Sandbox is intentionally disabled: the app's core
+	  purpose is uninstalling applications, removing LaunchAgents/LaunchDaemons,
+	  terminating processes and driving Homebrew, none of which any sandbox
+	  entitlement permits.
+	-->
 	<key>com.apple.security.app-sandbox</key>
 	<false/>
-	<key>com.apple.security.files.user-selected.read-write</key>
-	<true/>
+
+	<!-- Drives Finder (moving bundles to Trash) and osascript privilege prompts. -->
 	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+
+	<!-- Hardened runtime exceptions required by the cleaner's subprocesses
+	     (/bin/ps, /usr/bin/top, /usr/bin/du, /bin/launchctl, brew). -->
+	<key>com.apple.security.cs.allow-dyld-environment-variables</key>
+	<true/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+
+	<!-- Reading arbitrary user files is inherent to disk scanning. -->
+	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
 </dict>
 </plist>
