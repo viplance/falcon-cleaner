@@ -4,7 +4,17 @@ struct AppRowView: View {
     let app: AppInfo
     let isSelected: Bool
     let toggleSelection: () -> Void
-    
+
+    /// Secondary line under the app name. Apps outside the standard folders show where
+    /// they live, since that is what explains their presence in the list.
+    private var subtitle: String {
+        if app.isDanglingRegistration { return "Listed by macOS · app no longer on disk" }
+        if app.isBroken { return "Broken application entry" }
+        if app.type == .registered { return app.path.deletingLastPathComponent().path }
+        return app.bundleIdentifier ?? "Unknown bundle ID"
+    }
+
+
     var body: some View {
         HStack(spacing: 12) {
             Toggle("", isOn: Binding(
@@ -41,16 +51,19 @@ struct AppRowView: View {
                     AppInfoHint(app: app)
                 }
 
-                Text(app.bundleIdentifier ?? "Unknown bundle ID")
+                Text(subtitle)
                     .font(.caption)
                     .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
             
             Spacer()
             
             VStack(alignment: .trailing, spacing: 2) {
-                // Startup items have no meaningful size (always zero), so hide it.
-                if app.type != .startup {
+                // Startup items have no meaningful size (always zero), and a dangling
+                // registration has no files left at all, so hide the size for both.
+                if app.type != .startup && !app.isDanglingRegistration {
                     Text(ByteCountFormatter.string(fromByteCount: app.totalSize, countStyle: .file))
                         .font(.subheadline)
                         .fontWeight(.medium)
@@ -63,6 +76,22 @@ struct AppRowView: View {
                         .padding(.vertical, 2)
                         .background(Color.yellow.opacity(0.2))
                         .foregroundColor(.yellow)
+                        .cornerRadius(4)
+                } else if app.isDanglingRegistration {
+                    Text("Leftover")
+                        .font(.system(size: 10, weight: .bold))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(Color.orange.opacity(0.15))
+                        .foregroundColor(.orange)
+                        .cornerRadius(4)
+                } else if app.isBroken {
+                    Text("Broken")
+                        .font(.system(size: 10, weight: .bold))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(Color.red.opacity(0.15))
+                        .foregroundColor(.red)
                         .cornerRadius(4)
                 }
             }

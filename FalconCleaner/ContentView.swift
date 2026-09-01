@@ -14,6 +14,7 @@ struct ContentView: View {
                             switch category {
                             case .all: return "circle.grid.2x2.fill"
                             case .standard: return "app.fill"
+                            case .other: return "questionmark.folder"
                             case .brew: return "terminal"
                             case .startup: return "bolt.fill"
                             case .processes: return "cpu"
@@ -22,7 +23,7 @@ struct ContentView: View {
                         }()
                     )
                     // Indent the sub-categories that "All" aggregates.
-                    .padding(.leading, (category == .standard || category == .brew || category == .startup) ? 16 : 0)
+                    .padding(.leading, (category == .standard || category == .other || category == .brew || category == .startup) ? 16 : 0)
                 }
             }
             .listStyle(.sidebar)
@@ -170,16 +171,16 @@ struct ContentView: View {
             CPUAlertMonitor.shared.start()
             await viewModel.scan()
         }
-        .alert("Confirm Clean Up", isPresented: $showingConfirmation) {
+        .alert("Move to Trash", isPresented: $showingConfirmation) {
             Button("Cancel", role: .cancel) { }
-            Button("Delete Permanently", role: .destructive) {
+            Button("Move to Trash", role: .destructive) {
                 Task {
                     await viewModel.cleanupSelected()
                 }
             }
         } message: {
             let totalSelected = viewModel.apps.filter { viewModel.selectedApps.contains($0.id) }.count
-            Text("This will permanently delete \(totalSelected) applications and their related files, bypassing the Trash. This action cannot be undone.")
+            Text("Move \(totalSelected) application(s) and their related files to the Trash? You can empty the Trash afterwards to remove the files permanently.")
         }
     }
 }

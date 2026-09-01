@@ -21,16 +21,25 @@ nonisolated final class AppScanner {
         ].compactMap { $0 }
         
         var apps: [AppInfo] = []
-        
+        var scannedPaths = Set<String>()
+
         // 1. Scan Standard Apps
         for dir in appDirs {
             var isDirectory: ObjCBool = false
             if fileManager.fileExists(atPath: dir.path, isDirectory: &isDirectory), isDirectory.boolValue {
                 do {
                     let contents = try fileManager.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isApplicationKey, .fileSizeKey], options: .skipsHiddenFiles)
-                    for url in contents where url.pathExtension == "app" {
+                    // Do not rely on Bundle(url:) to decide whether an entry is an app.
+                    // Dangling symlinks, Finder aliases and incomplete bundles still appear
+                    // in Applications, but cannot be opened and do not form valid Bundles.
+                    for url in contents where url.pathExtension.caseInsensitiveCompare("app") == .orderedSame {
                         if let appInfo = extractAppInfo(from: url) {
                             apps.append(appInfo)
+                            // Record the resolved path so the Launch Services pass does not
+                            // list the same bundle twice. Symlinked entries (e.g.
+                            // /Applications/OpenVPN Connect.app) register under their target.
+                            scannedPaths.insert(url.resolvingSymlinksInPath().path)
+                            scannedPaths.insert(url.path)
                         }
                     }
                 } catch {
@@ -48,7 +57,12 @@ nonisolated final class AppScanner {
         // 3. Scan Startup Scripts
         let startupApps = scanStartupScripts()
         apps.append(contentsOf: startupApps)
-        
+
+        // 4. Scan apps registered with Launch Services outside the standard folders.
+        //    These show up in Launchpad and Spotlight, so users expect to find them here.
+        let registeredApps = scanRegisteredApps(excludingPaths: scannedPaths)
+        apps.append(contentsOf: registeredApps)
+
         return apps.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
     
@@ -90,6 +104,7 @@ nonisolated final class AppScanner {
                     icon: icon,
                     bundleSize: bundleSize,
                     isSystemApp: false,
+                    isBroken: false,
                     type: .brew,
                     brewServiceName: services.contains(formulaName) ? formulaName : nil,
                     relatedFiles: relatedFiles,
@@ -104,6 +119,43 @@ nonisolated final class AppScanner {
         return brewApps
     }
     
+    /// Builds entries for apps registered with Launch Services outside the standard
+    /// folders, skipping any bundle the directory scan already reported.
+    private func scanRegisteredApps(excludingPaths scannedPaths: Set<String>) -> [AppInfo] {
+        let registered = LaunchServicesScanner().scanRegisteredApps()
+        var apps: [AppInfo] = []
+
+        for entry in registered {
+            let resolved = entry.url.resolvingSymlinksInPath().path
+            guard !scannedPaths.contains(resolved), !scannedPaths.contains(entry.url.path) else { continue }
+
+            if entry.isDangling {
+                // The bundle is gone; only the stale registration remains. There is
+                // nothing on disk to size or to search for leftovers.
+                apps.append(AppInfo(
+                    name: entry.url.deletingPathExtension().lastPathComponent,
+                    bundleIdentifier: nil,
+                    path: entry.url,
+                    icon: NSWorkspace.shared.icon(for: .applicationBundle),
+                    bundleSize: 0,
+                    isSystemApp: false,
+                    isBroken: true,
+                    type: .registered,
+                    brewServiceName: nil,
+                    relatedFiles: [],
+                    totalSize: 0,
+                    category: "Leftover entry",
+                    isDanglingRegistration: true
+                ))
+            } else if var appInfo = extractAppInfo(from: entry.url) {
+                appInfo.type = .registered
+                apps.append(appInfo)
+            }
+        }
+
+        return apps
+    }
+
     private func scanStartupScripts() -> [AppInfo] {
         var startupApps: [AppInfo] = []
         let paths = [
@@ -148,6 +200,7 @@ nonisolated final class AppScanner {
                             icon: icon,
                             bundleSize: bundleSize,
                             isSystemApp: false,
+                            isBroken: false,
                             type: .startup,
                             brewServiceName: nil,
                             relatedFiles: [],
@@ -235,13 +288,14 @@ nonisolated final class AppScanner {
     }
     
     private func extractAppInfo(from url: URL) -> AppInfo? {
-        guard let bundle = Bundle(url: url) else { return nil }
+        let bundle = Bundle(url: url)
+        let isBroken = bundle == nil
         
-        let name = bundle.object(forInfoDictionaryKey: "CFBundleName") as? String 
-            ?? bundle.object(forInfoDictionaryKey: "CFBundleExecutable") as? String 
+        let name = bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
+            ?? bundle?.object(forInfoDictionaryKey: "CFBundleExecutable") as? String
             ?? url.deletingPathExtension().lastPathComponent
         
-        let bundleIdentifier = bundle.bundleIdentifier
+        let bundleIdentifier = bundle?.bundleIdentifier
         let isSystemApp = url.path.hasPrefix("/System") || url.path.hasPrefix("/Library/Apple")
         
         let icon = NSWorkspace.shared.icon(forFile: url.path)
@@ -256,9 +310,11 @@ nonisolated final class AppScanner {
         }
         let relatedSize = relatedFiles.reduce(0) { $0 + allocatedSizeOfDirectory(at: $1) }
 
-        let category = humanCategory(bundle.object(forInfoDictionaryKey: "LSApplicationCategoryType") as? String)
-        let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-        let developer = vendorFromCopyright(bundle.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String)
+        let category = isBroken
+            ? "Broken application"
+            : humanCategory(bundle?.object(forInfoDictionaryKey: "LSApplicationCategoryType") as? String)
+        let version = bundle?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let developer = vendorFromCopyright(bundle?.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String)
 
         let app = AppInfo(
             name: name,
@@ -267,6 +323,7 @@ nonisolated final class AppScanner {
             icon: icon,
             bundleSize: bundleSize,
             isSystemApp: isSystemApp,
+            isBroken: isBroken,
             type: .standard,
             brewServiceName: nil,
             relatedFiles: relatedFiles,

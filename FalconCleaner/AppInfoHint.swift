@@ -29,7 +29,9 @@ struct AppInfoHint: View {
     @ViewBuilder
     private var content: some View {
         switch app.type {
-        case .standard:
+        // Registered apps carry the same bundle metadata as standard ones; `infoHint`
+        // adds their location, which is the detail that matters for those entries.
+        case .standard, .registered:
             Text(app.infoHint).font(.callout)
 
         case .brew:
@@ -67,7 +69,7 @@ struct AppInfoHint: View {
             if let path = app.launchProgramPath {
                 startupDetails = await ProcessInspector.shared.detailsAsync(forPath: path)
             }
-        case .standard:
+        case .standard, .registered:
             break
         }
     }

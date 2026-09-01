@@ -39,6 +39,19 @@ class AppManager {
     }
     
     func cleanup(app: AppInfo, permanently: Bool = false) async throws {
+        // 0. A dangling registration has no files left: the bundle is already gone and
+        //    only the Launch Services entry keeps it visible in Launchpad/Spotlight.
+        //    Unregistering is the entire cleanup, and the file removal below would
+        //    otherwise fail its final verification on a path that does not exist.
+        if app.isDanglingRegistration {
+            guard LaunchServicesScanner.unregister(url: app.path) else {
+                throw NSError(domain: "FalconCleaner", code: 2, userInfo: [
+                    NSLocalizedDescriptionKey: "Failed to remove the leftover entry for \(app.name)."
+                ])
+            }
+            return
+        }
+
         // 1. Stop app/service if running
         if app.type == .brew {
             if let serviceName = app.brewServiceName {
@@ -74,10 +87,10 @@ class AppManager {
         // we move to the Trash. Only existing paths are touched (brew uninstall may have
         // already removed the bundle).
         var targets: [URL] = []
-        if fileManager.fileExists(atPath: app.path.path) {
+        if itemExists(at: app.path) {
             targets.append(app.path)
         }
-        for fileURL in app.relatedFiles where fileManager.fileExists(atPath: fileURL.path) {
+        for fileURL in app.relatedFiles where itemExists(at: fileURL) {
             targets.append(fileURL)
         }
 
@@ -107,9 +120,23 @@ class AppManager {
         }
         
         // 7. Final Verification
-        if fileManager.fileExists(atPath: app.path.path) {
+        if itemExists(at: app.path) {
             throw NSError(domain: "FalconCleaner", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to remove \(app.name)."])
         }
+
+        // 8. Drop the Launch Services registration. Without this the app lingers in
+        //    Launchpad and Spotlight as a dead entry until the database is rebuilt.
+        if app.type == .registered {
+            LaunchServicesScanner.unregister(url: app.path)
+        }
+    }
+
+    /// `fileExists` follows symbolic links and therefore returns false for a dangling
+    /// `.app` link. Reading attributes uses lstat semantics, allowing cleanup and final
+    /// verification to account for the link itself even when its destination is gone.
+    private func itemExists(at url: URL) -> Bool {
+        fileManager.fileExists(atPath: url.path)
+            || (try? fileManager.attributesOfItem(atPath: url.path)) != nil
     }
     
     private func stopBrewService(_ name: String) async {

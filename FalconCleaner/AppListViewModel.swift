@@ -5,6 +5,7 @@ import Combine
 enum AppCategory: String, CaseIterable, Identifiable {
     case all = "All"
     case standard = "Applications"
+    case other = "Other Locations"
     case brew = "Brew"
     case startup = "Startup"
     case processes = "Processes"
@@ -32,7 +33,14 @@ class AppListViewModel: ObservableObject {
     @Published private(set) var isHomebrewInstalled: Bool = AppScanner.isHomebrewInstalled()
 
     var availableCategories: [AppCategory] {
-        AppCategory.allCases.filter { isHomebrewInstalled || $0 != .brew }
+        AppCategory.allCases.filter { category in
+            switch category {
+            case .brew: return isHomebrewInstalled
+            // Most Macs have no apps outside the standard folders; hide the empty tab.
+            case .other: return apps.contains { $0.type == .registered }
+            default: return true
+            }
+        }
     }
 
     var filteredApps: [AppInfo] {
@@ -42,6 +50,8 @@ class AppListViewModel: ObservableObject {
             categoryApps = apps
         case .standard:
             categoryApps = apps.filter { $0.type == .standard }
+        case .other:
+            categoryApps = apps.filter { $0.type == .registered }
         case .brew:
             categoryApps = apps.filter { $0.type == .brew }
         case .startup:
@@ -92,6 +102,11 @@ class AppListViewModel: ObservableObject {
         if isHomebrewInstalled {
             BrewInspector.shared.prefetchAll(apps.filter { $0.type == .brew }.map { $0.name })
         }
+        // The Other Locations tab disappears when nothing is found there; fall back to All
+        // so the list is never left showing an empty category.
+        if selectedCategory == .other, !apps.contains(where: { $0.type == .registered }) {
+            selectedCategory = .all
+        }
         isScanning = false
         hasScanned = true
         progressMessage = ""
@@ -102,10 +117,20 @@ class AppListViewModel: ObservableObject {
         let appsToCleanup = apps.filter { selectedApps.contains($0.id) }
         var failed: [String] = []
 
+        // Only bundles and their files reach the Trash. Homebrew packages are removed by
+        // `brew uninstall` and leftover entries are just unregistered, so neither can be
+        // restored — the summary must not promise otherwise.
+        var trashedAny = false
+
         for app in appsToCleanup {
             progressMessage = "Cleaning up \(app.name)..."
             do {
-                try await AppManager.shared.cleanup(app: app, permanently: true)
+                // Move to the Trash rather than deleting outright, so a removal can be
+                // undone until the user empties it.
+                try await AppManager.shared.cleanup(app: app, permanently: false)
+                if app.type != .brew && !app.isDanglingRegistration {
+                    trashedAny = true
+                }
                 apps.removeAll { $0.id == app.id }
                 selectedApps.remove(app.id)
             } catch {
@@ -115,9 +140,13 @@ class AppListViewModel: ObservableObject {
         }
 
         isCleaning = false
-        progressMessage = failed.isEmpty
-            ? "Cleanup finished!"
-            : "Could not remove: \(failed.joined(separator: ", "))"
+        if !failed.isEmpty {
+            progressMessage = "Could not remove: \(failed.joined(separator: ", "))"
+        } else if trashedAny {
+            progressMessage = "Moved to the Trash. Empty the Trash to free up the space."
+        } else {
+            progressMessage = "Cleanup finished!"
+        }
         try? await Task.sleep(nanoseconds: 3_000_000_000)
         progressMessage = ""
     }

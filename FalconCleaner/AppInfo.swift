@@ -5,6 +5,10 @@ enum AppType {
     case standard
     case brew
     case startup
+    /// Registered with Launch Services but living outside the standard application
+    /// folders (typically a build output or a bundle run once from Downloads).
+    /// These appear in Launchpad and Spotlight, so users expect to manage them here.
+    case registered
 }
 
 struct AppInfo: Identifiable, Hashable {
@@ -15,7 +19,8 @@ struct AppInfo: Identifiable, Hashable {
     let icon: NSImage?
     let bundleSize: Int64
     let isSystemApp: Bool
-    let type: AppType
+    let isBroken: Bool
+    var type: AppType
     let brewServiceName: String?
     var relatedFiles: [URL] = []
 
@@ -27,11 +32,19 @@ struct AppInfo: Identifiable, Hashable {
     var developer: String? = nil
     var launchProgramPath: String? = nil   // executable a startup item launches
 
+    /// True when Launch Services still lists the app but its bundle is gone from disk.
+    /// Nothing remains to delete, so cleanup only unregisters the stale entry.
+    var isDanglingRegistration: Bool = false
+
     var typeLabel: String {
+        if isDanglingRegistration { return "Leftover entry" }
+        if isBroken { return "Broken application" }
+
         switch type {
         case .standard: return isSystemApp ? "System app" : "Application"
         case .brew: return "Homebrew package"
         case .startup: return "Startup item"
+        case .registered: return "Application (outside Applications folder)"
         }
     }
 
@@ -49,6 +62,13 @@ struct AppInfo: Identifiable, Hashable {
         }
         if brewServiceName != nil {
             lines.append("Runs as a background service")
+        }
+        // For apps outside the standard folders the location is the key fact: it explains
+        // why the entry exists and lets the user judge whether removing it is safe.
+        if type == .registered {
+            lines.append(isDanglingRegistration
+                ? "Listed by macOS, but the app is no longer on disk"
+                : "Located in \(path.deletingLastPathComponent().path)")
         }
         return lines.joined(separator: "\n")
     }
