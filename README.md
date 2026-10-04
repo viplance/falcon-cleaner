@@ -94,7 +94,10 @@ been tampered with.
 Because the app analyzes local system configurations and removes applications, it interfaces
 with standard AppleScript commands. When uninstalling protected packages or background
 LaunchDaemons, macOS will prompt you for your Administrator password to authorize the cleanup.
-Deleted items are moved to the Trash, so removals remain reversible. For the most complete
+Items are moved to the Trash by default. In **Falcon Cleaner → Settings…**, you can explicitly
+enable permanent deletion after acknowledging a warning; applications, related files, and
+items deleted in Disk will then bypass the Trash and cannot be restored from it. Homebrew
+packages are always uninstalled directly, regardless of this setting. For the most complete
 results, grant Falcon Cleaner **Full Disk Access** in System Settings → Privacy & Security.
 
 See [PRIVACY.md](PRIVACY.md) for the full privacy policy. In short: the app makes no network

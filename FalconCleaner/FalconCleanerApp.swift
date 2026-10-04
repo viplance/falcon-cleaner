@@ -17,6 +17,10 @@ struct FalconCleanerApp: App {
                 .background(WindowConfigurator())
         }
         .defaultSize(width: 960, height: 560)
+
+        Settings {
+            SettingsView()
+        }
     }
 }
 

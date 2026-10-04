@@ -1,6 +1,6 @@
 {
   "name": "falcon-cleaner",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Falcon Cleaner — native macOS app uninstaller and disk cleanup utility.",
   "private": true,
   "author": "Dzmitry Sharko",

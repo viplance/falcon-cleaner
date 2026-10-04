@@ -112,7 +112,7 @@ class AppListViewModel: ObservableObject {
         progressMessage = ""
     }
     
-    func cleanupSelected() async {
+    func cleanupSelected(permanently: Bool = false) async {
         isCleaning = true
         let appsToCleanup = apps.filter { selectedApps.contains($0.id) }
         var failed: [String] = []
@@ -125,10 +125,8 @@ class AppListViewModel: ObservableObject {
         for app in appsToCleanup {
             progressMessage = "Cleaning up \(app.name)..."
             do {
-                // Move to the Trash rather than deleting outright, so a removal can be
-                // undone until the user empties it.
-                try await AppManager.shared.cleanup(app: app, permanently: false)
-                if app.type != .brew && !app.isDanglingRegistration {
+                try await AppManager.shared.cleanup(app: app, permanently: permanently)
+                if !permanently && app.type != .brew && !app.isDanglingRegistration {
                     trashedAny = true
                 }
                 apps.removeAll { $0.id == app.id }
@@ -144,6 +142,8 @@ class AppListViewModel: ObservableObject {
             progressMessage = "Could not remove: \(failed.joined(separator: ", "))"
         } else if trashedAny {
             progressMessage = "Moved to the Trash. Empty the Trash to free up the space."
+        } else if permanently {
+            progressMessage = "Permanent deletion finished."
         } else {
             progressMessage = "Cleanup finished!"
         }

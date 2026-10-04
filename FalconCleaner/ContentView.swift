@@ -2,7 +2,27 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var viewModel = AppListViewModel()
+    @AppStorage(AppSettings.permanentlyDeleteItemsKey) private var permanentlyDeleteItems = false
     @State private var showingConfirmation = false
+    @State private var pendingPermanentDeletion = false
+
+    private var deletionActionTitle: String {
+        pendingPermanentDeletion ? "Delete Permanently" : "Move to Trash"
+    }
+
+    private var cleanupConfirmationMessage: String {
+        let selected = viewModel.apps.filter { viewModel.selectedApps.contains($0.id) }
+        var message = pendingPermanentDeletion
+            ? "Permanently delete \(selected.count) selected item(s) and their related files, bypassing the Trash? Saved data may be lost. This action cannot be undone."
+            : "Move \(selected.count) selected item(s) and their related files to the Trash? You can restore the files until you empty the Trash."
+        if selected.contains(where: { $0.type == .brew }) {
+            message += " Homebrew packages will be uninstalled directly and cannot be restored from the Trash."
+        }
+        if selected.contains(where: { $0.isDanglingRegistration }) {
+            message += " Leftover entries will only be unregistered; they have no files on disk."
+        }
+        return message
+    }
     
     var body: some View {
         NavigationSplitView {
@@ -153,7 +173,10 @@ struct ContentView: View {
                     .buttonStyle(.link)
                     .disabled(viewModel.selectedApps.isEmpty || viewModel.isCleaning)
 
-                    Button(action: { showingConfirmation = true }) {
+                    Button(action: {
+                        pendingPermanentDeletion = permanentlyDeleteItems
+                        showingConfirmation = true
+                    }) {
                         Text("Clean Up")
                             .frame(width: 100)
                     }
@@ -171,16 +194,16 @@ struct ContentView: View {
             CPUAlertMonitor.shared.start()
             await viewModel.scan()
         }
-        .alert("Move to Trash", isPresented: $showingConfirmation) {
+        .alert(deletionActionTitle, isPresented: $showingConfirmation) {
             Button("Cancel", role: .cancel) { }
-            Button("Move to Trash", role: .destructive) {
+            Button(deletionActionTitle, role: .destructive) {
+                let permanently = pendingPermanentDeletion
                 Task {
-                    await viewModel.cleanupSelected()
+                    await viewModel.cleanupSelected(permanently: permanently)
                 }
             }
         } message: {
-            let totalSelected = viewModel.apps.filter { viewModel.selectedApps.contains($0.id) }.count
-            Text("Move \(totalSelected) application(s) and their related files to the Trash? You can empty the Trash afterwards to remove the files permanently.")
+            Text(cleanupConfirmationMessage)
         }
     }
 }

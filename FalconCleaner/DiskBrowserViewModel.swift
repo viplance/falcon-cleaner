@@ -163,20 +163,27 @@ final class DiskBrowserViewModel: ObservableObject {
         selected.removeAll()
     }
 
-    func deleteSelected() async {
+    func deleteSelected(permanently: Bool = false) async {
         let targets = entries.filter { selected.contains($0.id) }
         guard !targets.isEmpty else { return }
         isDeleting = true
         var failed: [String] = []
         for entry in targets {
             do {
-                try FileManager.default.trashItem(at: entry.url, resultingItemURL: nil)
+                if permanently {
+                    try FileManager.default.removeItem(at: entry.url)
+                } else {
+                    try FileManager.default.trashItem(at: entry.url, resultingItemURL: nil)
+                }
             } catch {
                 failed.append(entry.name)
             }
         }
         isDeleting = false
-        statusMessage = failed.isEmpty ? "" : "Could not move to Trash: \(failed.joined(separator: ", "))"
         load()
+        if !failed.isEmpty {
+            let action = permanently ? "delete permanently" : "move to Trash"
+            statusMessage = "Could not \(action): \(failed.joined(separator: ", "))"
+        }
     }
 }

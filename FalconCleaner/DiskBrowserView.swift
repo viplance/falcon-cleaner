@@ -2,7 +2,13 @@ import SwiftUI
 
 struct DiskBrowserView: View {
     @StateObject private var viewModel = DiskBrowserViewModel()
+    @AppStorage(AppSettings.permanentlyDeleteItemsKey) private var permanentlyDeleteItems = false
     @State private var showingDeleteConfirmation = false
+    @State private var pendingPermanentDeletion = false
+
+    private var deletionActionTitle: String {
+        pendingPermanentDeletion ? "Delete Permanently" : "Move to Trash"
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -122,8 +128,11 @@ struct DiskBrowserView: View {
                     .buttonStyle(.link)
                     .disabled(viewModel.selected.isEmpty || viewModel.isDeleting)
 
-                Button(action: { showingDeleteConfirmation = true }) {
-                    Text("Delete").frame(width: 80)
+                Button(action: {
+                    pendingPermanentDeletion = permanentlyDeleteItems
+                    showingDeleteConfirmation = true
+                }) {
+                    Text(permanentlyDeleteItems ? "Delete Permanently" : "Move to Trash")
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
@@ -135,13 +144,18 @@ struct DiskBrowserView: View {
         }
         .task { if viewModel.entries.isEmpty { viewModel.load() } }
         .onDisappear { viewModel.cancelSizeCalculation() }
-        .alert("Move to Trash", isPresented: $showingDeleteConfirmation) {
+        .alert(deletionActionTitle, isPresented: $showingDeleteConfirmation) {
             Button("Cancel", role: .cancel) { }
-            Button("Move to Trash", role: .destructive) {
-                Task { await viewModel.deleteSelected() }
+            Button(deletionActionTitle, role: .destructive) {
+                let permanently = pendingPermanentDeletion
+                Task { await viewModel.deleteSelected(permanently: permanently) }
             }
         } message: {
-            Text("Move \(viewModel.selected.count) selected item(s) to the Trash? You can restore them from the Trash if needed.")
+            if pendingPermanentDeletion {
+                Text("Permanently delete \(viewModel.selected.count) selected item(s), bypassing the Trash? This action cannot be undone.")
+            } else {
+                Text("Move \(viewModel.selected.count) selected item(s) to the Trash? You can restore them from the Trash if needed.")
+            }
         }
     }
 }
