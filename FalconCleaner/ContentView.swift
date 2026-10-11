@@ -2,19 +2,24 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var viewModel = AppListViewModel()
-    @AppStorage(AppSettings.permanentlyDeleteItemsKey) private var permanentlyDeleteItems = false
+    // Permanent deletion temporarily disabled; ignore any previously saved preference.
+    // @AppStorage(AppSettings.permanentlyDeleteItemsKey) private var permanentlyDeleteItems = false
     @State private var showingConfirmation = false
-    @State private var pendingPermanentDeletion = false
+    // @State private var pendingPermanentDeletion = false
 
     private var deletionActionTitle: String {
-        pendingPermanentDeletion ? "Delete Permanently" : "Move to Trash"
+        // pendingPermanentDeletion ? "Delete Permanently" : "Move to Trash"
+        "Move to Trash"
     }
 
     private var cleanupConfirmationMessage: String {
         let selected = viewModel.apps.filter { viewModel.selectedApps.contains($0.id) }
+        /* Permanent deletion temporarily disabled.
         var message = pendingPermanentDeletion
             ? "Permanently delete \(selected.count) selected item(s) and their related files, bypassing the Trash? Saved data may be lost. This action cannot be undone."
             : "Move \(selected.count) selected item(s) and their related files to the Trash? You can restore the files until you empty the Trash."
+        */
+        var message = "Move \(selected.count) selected item(s) and their related files to the Trash? You can restore the files until you empty the Trash."
         if selected.contains(where: { $0.type == .brew }) {
             message += " Homebrew packages will be uninstalled directly and cannot be restored from the Trash."
         }
@@ -45,6 +50,7 @@ struct ContentView: View {
                     // Indent the sub-categories that "All" aggregates.
                     .padding(.leading, (category == .standard || category == .other || category == .brew || category == .startup) ? 16 : 0)
                 }
+                .pointingHandCursor()
             }
             .listStyle(.sidebar)
             .navigationTitle("Falcon Cleaner")
@@ -69,9 +75,19 @@ struct ContentView: View {
                                 .foregroundColor(.secondary)
                         }
                         .buttonStyle(.plain)
+                        .pointingHandCursor()
                     }
                     
                     Spacer()
+
+                    Button {
+                        Task { await viewModel.scan() }
+                    } label: {
+                        Label(viewModel.isScanning ? "Refreshing..." : "Refresh", systemImage: "arrow.clockwise")
+                    }
+                    .pointingHandCursor()
+                    .disabled(viewModel.isScanning || viewModel.isCleaning || showingConfirmation)
+                    .help("Rescan applications and their related files")
 
                     if viewModel.selectedCategory != .startup {
                         Menu {
@@ -91,6 +107,7 @@ struct ContentView: View {
                         }
                         .menuStyle(.borderlessButton)
                         .fixedSize()
+                        .pointingHandCursor()
                     }
 
                     Text(viewModel.diskUsageInfo)
@@ -171,10 +188,11 @@ struct ContentView: View {
                         viewModel.deselectAll()
                     }
                     .buttonStyle(.link)
-                    .disabled(viewModel.selectedApps.isEmpty || viewModel.isCleaning)
+                    .pointingHandCursor()
+                    .disabled(viewModel.selectedApps.isEmpty || viewModel.isCleaning || viewModel.isScanning)
 
                     Button(action: {
-                        pendingPermanentDeletion = permanentlyDeleteItems
+                        // pendingPermanentDeletion = permanentlyDeleteItems
                         showingConfirmation = true
                     }) {
                         Text("Clean Up")
@@ -183,7 +201,8 @@ struct ContentView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .tint(.blue)
-                    .disabled(viewModel.selectedApps.isEmpty || viewModel.isCleaning)
+                    .pointingHandCursor()
+                    .disabled(viewModel.selectedApps.isEmpty || viewModel.isCleaning || viewModel.isScanning)
                 }
                 .padding()
                 .background(.ultraThinMaterial)
@@ -197,9 +216,10 @@ struct ContentView: View {
         .alert(deletionActionTitle, isPresented: $showingConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button(deletionActionTitle, role: .destructive) {
-                let permanently = pendingPermanentDeletion
+                // let permanently = pendingPermanentDeletion
                 Task {
-                    await viewModel.cleanupSelected(permanently: permanently)
+                    // await viewModel.cleanupSelected(permanently: permanently)
+                    await viewModel.cleanupSelected()
                 }
             }
         } message: {

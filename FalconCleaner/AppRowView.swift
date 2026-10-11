@@ -23,6 +23,7 @@ struct AppRowView: View {
             ))
             .toggleStyle(CheckboxToggleStyle())
             .labelsHidden()
+            .pointingHandCursor()
             
             if app.type == .brew {
                 Image(systemName: "mug.fill")
@@ -103,5 +104,6 @@ struct AppRowView: View {
         .onTapGesture {
             toggleSelection()
         }
+        .pointingHandCursor()
     }
 }

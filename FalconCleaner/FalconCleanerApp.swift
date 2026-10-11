@@ -18,9 +18,11 @@ struct FalconCleanerApp: App {
         }
         .defaultSize(width: 960, height: 560)
 
+        /* Settings temporarily disabled.
         Settings {
             SettingsView()
         }
+        */
     }
 }
 

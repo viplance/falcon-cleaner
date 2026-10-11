@@ -10,6 +10,8 @@ Falcon Cleaner is a native, lightweight, and powerful macOS utility built with S
 - **Homebrew Manager**: Detects installed Homebrew packages and services, allowing you to forcefully stop and cleanly uninstall them using your native `brew` environment.
 - **Startup Script Control**: Scans for persistent LaunchAgents and LaunchDaemons (e.g., auto-updaters like Microsoft AutoUpdate) giving you back control to easily remove unwanted background services.
 - **Deep Scanning**: Evaluates application footprints to give you a true calculation of the disk space that will be reclaimed.
+- **Refresh Controls**: Refresh Applications and Disk manually while preserving selections for items that still exist. Disk refresh recalculates folder sizes; process polling pauses when its window is inactive or minimized.
+- **Pointer Feedback**: Enabled buttons, navigation, checkboxes, and clickable rows show a pointing-hand cursor, including on macOS 13 and 14.
 - **Native Experience**: Written fully in Swift using SwiftUI for a highly responsive, modern native interface.
 
 ## 🛠 Building from Source
@@ -35,11 +37,8 @@ Once finished, you will find `FalconCleaner.dmg` inside the `/build` directory.
 
 ## 🚀 Releasing
 
-Falcon Cleaner is distributed **outside the Mac App Store**, signed with a Developer ID
-certificate and notarized by Apple. The App Store is not an option: its mandatory sandbox
-forbids uninstalling other applications, removing LaunchDaemons, terminating processes and
-invoking Homebrew — which is the entirety of what this app does. This is the same route
-taken by comparable utilities such as AppCleaner and CleanMyMac.
+Developer ID releases are signed and notarized for distribution outside the Mac App Store.
+App Store builds use a separate sandboxed archive and distribution signing, as described below.
 
 ### One-time setup
 
@@ -67,37 +66,64 @@ submits it to Apple's notary service, and staples the resulting ticket. The outp
 Bump `MARKETING_VERSION` (user-facing) and `CURRENT_PROJECT_VERSION` (build number) in the
 Xcode project, along with `version` in `package.json`, before each release.
 
-### App Store package (experimental)
+### App Store build and upload
+
+Before each upload, update `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in both Xcode
+configurations and `version` in `package.json`. Increase the build number for each upload.
+
+The build requires the **Apple Distribution** and **3rd Party Mac Developer Installer**
+certificates for team `W37L5728Y6`, an App Store provisioning profile at
+`~/Library/MobileDevice/Provisioning Profiles/FalconCleaner_App_Store.provisionprofile`,
+and the developer account signed in under **Xcode → Settings → Accounts**.
 
 ```bash
 npm run build:appstore
 ```
 
-Produces `dist/FalconCleaner.pkg` for Transporter. **This build is heavily reduced.** The App
-Store requires the App Sandbox, under which uninstalling applications, terminating processes,
-running `brew`/`du`/`launchctl` and requesting administrator privileges are all denied. Those
-paths are compiled out via `-DAPPSTORE` and the app is very likely to be rejected under App
-Review guideline 2.4.5 / 4.2. Use the Developer ID flow above for the real product.
+Produces the signed `dist/FalconCleaner.pkg`, `dist/FalconCleaner-AppStore.xcarchive`, and
+`dist/ExportOptions-AppStore.plist`. The bundle ID is `enotix.FalconCleaner`; the build uses
+`FalconCleaner.AppStore.entitlements` and the `APPSTORE` compilation condition.
 
-Requires an App Store provisioning profile for the bundle ID at
-`~/Library/MobileDevice/Provisioning Profiles/FalconCleaner_App_Store.provisionprofile`, and
-uses `FalconCleaner.AppStore.entitlements` (sandbox enabled, with the identifier entitlements
-Transporter requires).
+**Use the saved Xcode account to upload the archive.** This working workflow does not require
+an API key or Issuer ID. Run these commands from the repository root after building:
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+import plistlib
+
+options = plistlib.loads(Path('dist/ExportOptions-AppStore.plist').read_bytes())
+options['destination'] = 'upload'
+options['uploadSymbols'] = True
+Path('dist/UploadOptions-AppStore.plist').write_bytes(plistlib.dumps(options))
+PY
+
+xcodebuild -exportArchive \
+  -archivePath dist/FalconCleaner-AppStore.xcarchive \
+  -exportOptionsPlist dist/UploadOptions-AppStore.plist \
+  -allowProvisioningUpdates
+```
+
+Confirmed on October 11, 2026: **1.2.2 (5)** and **1.2.3 (6)** uploaded successfully through this workflow.
+Check for `Upload succeeded.` and `EXPORT SUCCEEDED` in the command output. Apple's
+`ContentDelivery.log`, inside the printed `.xcdistributionlogs` directory, reported
+`UPLOAD SUCCEEDED with no errors` and `Upload State: PROCESSING` for that upload.
+After processing, select the build in App Store Connect for review submission.
+
+Signing credentials remain in Keychain/Xcode; do not commit passwords or private API keys.
 
 ## 🔒 Permissions & Security
 
-Falcon Cleaner runs **without the App Sandbox**, which its core features require. It is built
-with Apple's **hardened runtime**, signed with a Developer ID certificate and notarized by
-Apple, so macOS verifies on every launch that the app comes from a known developer and has not
-been tampered with.
+The Developer ID build runs **without the App Sandbox**, with Apple's **hardened runtime**,
+Developer ID signing, and notarization. The App Store build enables the App Sandbox, which
+restricts access to other applications, system files, and privileged operations.
 
 Because the app analyzes local system configurations and removes applications, it interfaces
 with standard AppleScript commands. When uninstalling protected packages or background
 LaunchDaemons, macOS will prompt you for your Administrator password to authorize the cleanup.
-Items are moved to the Trash by default. In **Falcon Cleaner → Settings…**, you can explicitly
-enable permanent deletion after acknowledging a warning; applications, related files, and
-items deleted in Disk will then bypass the Trash and cannot be restored from it. Homebrew
-packages are always uninstalled directly, regardless of this setting. For the most complete
+Applications, related files, and items removed in Disk are moved to the Trash. Permanent
+deletion is temporarily disabled, including for users who previously enabled it. Homebrew
+packages are always uninstalled directly. For the most complete
 results, grant Falcon Cleaner **Full Disk Access** in System Settings → Privacy & Security.
 
 See [PRIVACY.md](PRIVACY.md) for the full privacy policy. In short: the app makes no network

@@ -27,6 +27,7 @@ struct ProcessRowView: View {
             ))
             .toggleStyle(CheckboxToggleStyle())
             .labelsHidden()
+            .pointingHandCursor()
 
             if let icon = process.icon {
                 Image(nsImage: icon)
@@ -99,5 +100,6 @@ struct ProcessRowView: View {
         .onTapGesture {
             toggleSelection()
         }
+        .pointingHandCursor()
     }
 }

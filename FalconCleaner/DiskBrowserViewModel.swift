@@ -29,6 +29,7 @@ final class DiskBrowserViewModel: ObservableObject {
     }
     @Published var isLoading = false
     @Published var isDeleting = false
+    @Published private(set) var isRefreshing = false
     @Published var isCalculatingSizes = false
     @Published var currentSizingFolderID: String?
     @Published var statusMessage = ""
@@ -36,6 +37,8 @@ final class DiskBrowserViewModel: ObservableObject {
     private let homeURL = FileManager.default.homeDirectoryForCurrentUser
     private var sizeTask: Task<Void, Never>?
     private var sizeScanID = UUID()
+    private var loadTask: Task<Void, Never>?
+    private var loadID = UUID()
 
     init() {
         currentURL = FileManager.default.homeDirectoryForCurrentUser
@@ -69,23 +72,36 @@ final class DiskBrowserViewModel: ObservableObject {
         return result
     }
 
-    func load() {
-        sizeTask?.cancel()
-        sizeScanID = UUID()
-        isCalculatingSizes = false
-        currentSizingFolderID = nil
-        selected.removeAll()
+    func refresh() {
+        guard !isLoading, !isDeleting, !isRefreshing else { return }
+        load(preservingSelection: true, invalidateSizes: true)
+    }
+
+    func load(preservingSelection: Bool = false, invalidateSizes: Bool = false) {
+        loadTask?.cancel()
+        cancelSizeCalculation()
+        loadID = UUID()
+        let requestID = loadID
+        if !preservingSelection { selected.removeAll() }
         statusMessage = ""
         isLoading = true
+        isRefreshing = invalidateSizes
         let url = currentURL
-        Task {
+        if invalidateSizes { FolderSizeCache.shared.invalidate(under: url) }
+        loadTask = Task {
             let list = await Task.detached { DiskScanner.shared.listDirectory(url) }.value
-            guard url == self.currentURL else { return }  // navigated away meanwhile
+            guard !Task.isCancelled, self.loadID == requestID else { return }
             self.entries = list
+            self.selected.formIntersection(Set(list.map { $0.id }))
             self.isLoading = false
+            self.loadTask = nil
             // Auto-size, but only inside the home tree — at the root the firmlinked system
             // volume would make it scan the whole disk and freeze.
-            if self.isWithinHome { self.calculateSizes() }
+            if self.isWithinHome {
+                self.calculateSizes()
+            } else {
+                self.isRefreshing = false
+            }
         }
     }
 
@@ -97,7 +113,11 @@ final class DiskBrowserViewModel: ObservableObject {
         sizeScanID = UUID()
         let scanID = sizeScanID
         let folders = entries.filter { $0.isDirectory && $0.folderSize == nil }.map { ($0.id, $0.url) }
-        guard !folders.isEmpty else { return }
+        guard !folders.isEmpty else {
+            isCalculatingSizes = false
+            isRefreshing = false
+            return
+        }
         isCalculatingSizes = true
         sizeTask = Task.detached(priority: .background) { [weak self] in
             try? await Task.sleep(nanoseconds: 500_000_000)
@@ -111,10 +131,12 @@ final class DiskBrowserViewModel: ObservableObject {
                 let modDate = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
                 let size = await DiskScanner.shared.directorySize(url, isCancelled: { Task.isCancelled })
                 if Task.isCancelled { break }
-                FolderSizeCache.shared.store(size, for: url.path, modDate: modDate)
                 await MainActor.run { [weak self] in
                     guard let self else { return }
                     guard self.sizeScanID == scanID else { return }
+                    // Commit the cache only while this scan is current. A cancelled scan
+                    // must not repopulate entries invalidated by a newer refresh.
+                    FolderSizeCache.shared.store(size, for: url.path, modDate: modDate)
                     if let index = self.entries.firstIndex(where: { $0.id == id }) {
                         self.entries[index].folderSize = size
                     }
@@ -125,6 +147,7 @@ final class DiskBrowserViewModel: ObservableObject {
                 guard let self, self.sizeScanID == scanID else { return }
                 self.isCalculatingSizes = false
                 self.currentSizingFolderID = nil
+                self.isRefreshing = false
             }
         }
     }
@@ -134,6 +157,15 @@ final class DiskBrowserViewModel: ObservableObject {
         sizeScanID = UUID()
         isCalculatingSizes = false
         currentSizingFolderID = nil
+        isRefreshing = false
+    }
+
+    func cancelLoading() {
+        loadTask?.cancel()
+        loadTask = nil
+        loadID = UUID()
+        isLoading = false
+        cancelSizeCalculation()
     }
 
     func open(_ entry: DiskEntry) {
@@ -163,26 +195,29 @@ final class DiskBrowserViewModel: ObservableObject {
         selected.removeAll()
     }
 
-    func deleteSelected(permanently: Bool = false) async {
+    func deleteSelected(/* permanently: Bool = false */) async {
+        guard !isLoading, !isDeleting, !isRefreshing else { return }
         let targets = entries.filter { selected.contains($0.id) }
         guard !targets.isEmpty else { return }
         isDeleting = true
         var failed: [String] = []
         for entry in targets {
             do {
+                /* Permanent deletion temporarily disabled.
                 if permanently {
                     try FileManager.default.removeItem(at: entry.url)
-                } else {
-                    try FileManager.default.trashItem(at: entry.url, resultingItemURL: nil)
                 }
+                */
+                try FileManager.default.trashItem(at: entry.url, resultingItemURL: nil)
             } catch {
                 failed.append(entry.name)
             }
         }
         isDeleting = false
-        load()
+        load(preservingSelection: true)
         if !failed.isEmpty {
-            let action = permanently ? "delete permanently" : "move to Trash"
+            // let action = permanently ? "delete permanently" : "move to Trash"
+            let action = "move to Trash"
             statusMessage = "Could not \(action): \(failed.joined(separator: ", "))"
         }
     }

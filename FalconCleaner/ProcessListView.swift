@@ -3,6 +3,11 @@ import SwiftUI
 struct ProcessListView: View {
     @StateObject private var viewModel = ProcessListViewModel()
     @State private var showingKillConfirmation = false
+    @State private var isWindowActive = false
+
+    private var shouldAutoRefresh: Bool {
+        isWindowActive && !showingKillConfirmation && !viewModel.isKilling
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,6 +24,7 @@ struct ProcessListView: View {
                             .foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
+                    .pointingHandCursor()
                 }
 
                 Spacer()
@@ -40,6 +46,7 @@ struct ProcessListView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
+                .pointingHandCursor()
 
                 if viewModel.hasLoaded {
                     Text(viewModel.load.summary)
@@ -103,7 +110,8 @@ struct ProcessListView: View {
                         .foregroundColor(.secondary)
 
                     if viewModel.hasLoaded {
-                        Text("Live · refreshes automatically")
+                        Text(shouldAutoRefresh && !viewModel.isHoveringList
+                             ? "Live · refreshes automatically" : "Auto-refresh paused")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -115,6 +123,7 @@ struct ProcessListView: View {
                     viewModel.deselectAll()
                 }
                 .buttonStyle(.link)
+                .pointingHandCursor()
                 .disabled(viewModel.selectedProcesses.isEmpty || viewModel.isKilling)
 
                 Button(action: { showingKillConfirmation = true }) {
@@ -124,6 +133,7 @@ struct ProcessListView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .tint(.red)
+                .pointingHandCursor()
                 .disabled(viewModel.selectedProcesses.isEmpty || viewModel.isKilling)
             }
             .padding()
@@ -137,8 +147,11 @@ struct ProcessListView: View {
         } message: {
             Text("Force-quit \(viewModel.selectedProcesses.count) selected process(es)? Unsaved work in those processes will be lost. Root-owned processes will ask for your password.")
         }
-        .task {
-            // Auto-refresh while the Processes section is visible.
+        .background(WindowActivityObserver(isActive: $isWindowActive))
+        .task(id: shouldAutoRefresh) {
+            // Restart on activation and cancel polling when this window loses focus,
+            // is minimized, or a destructive action/confirmation is in progress.
+            guard shouldAutoRefresh else { return }
             // Each scan already takes ~1s (top -l 2), then we pause before the next.
             while !Task.isCancelled {
                 // Pause updates while the pointer is over the list so rows don't
@@ -146,7 +159,11 @@ struct ProcessListView: View {
                 if !viewModel.isHoveringList || !viewModel.hasLoaded {
                     await viewModel.refresh()
                 }
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                do {
+                    try await Task.sleep(nanoseconds: 3_000_000_000)
+                } catch {
+                    return
+                }
             }
         }
     }

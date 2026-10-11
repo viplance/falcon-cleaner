@@ -5,7 +5,7 @@ import Foundation
 /// Note: a directory's modification date changes only when its *direct* children change
 /// (add/remove/rename), not when a file nested deeper is edited. So a cached size can be stale
 /// after a deep-nested change — an acceptable trade-off for a size browser, recoverable by
-/// recomputing in a later scan.
+/// explicitly invalidating the cache on a manual refresh.
 nonisolated final class FolderSizeCache: @unchecked Sendable {
     static let shared = FolderSizeCache()
 
@@ -22,5 +22,16 @@ nonisolated final class FolderSizeCache: @unchecked Sendable {
     nonisolated func store(_ size: Int64, for path: String, modDate: Date?) {
         lock.lock(); defer { lock.unlock() }
         cache[path] = (size, modDate)
+    }
+
+    /// A deep change affects both this subtree and any cached ancestors' totals.
+    nonisolated func invalidate(under url: URL) {
+        let path = url.standardizedFileURL.path
+        let prefix = path == "/" ? "/" : path + "/"
+        lock.lock(); defer { lock.unlock() }
+        cache = cache.filter { key, _ in
+            let ancestorPrefix = key == "/" ? "/" : key + "/"
+            return key != path && !key.hasPrefix(prefix) && !path.hasPrefix(ancestorPrefix)
+        }
     }
 }

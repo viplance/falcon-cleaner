@@ -89,15 +89,27 @@ class AppListViewModel: ObservableObject {
     }
     
     func scan() async {
+        guard !isScanning, !isCleaning else { return }
         isScanning = true
         progressMessage = "Scanning for applications..."
+        defer {
+            isScanning = false
+            progressMessage = ""
+        }
         isHomebrewInstalled = await Task.detached { AppScanner.isHomebrewInstalled() }.value
         if !isHomebrewInstalled, selectedCategory == .brew {
             selectedCategory = .all
         }
         // Task.detached guarantees the whole scan (incl. its heavy synchronous prologue)
         // runs off the main thread, so the UI never freezes.
-        apps = await Task.detached { await AppScanner.shared.scanInstalledApps() }.value
+        let scannedApps = await Task.detached { await AppScanner.shared.scanInstalledApps() }.value
+        guard !Task.isCancelled else { return }
+        // Scanning creates new UUIDs. Remap the surviving selection by bundle path.
+        let selectedPaths = Set(apps.filter { selectedApps.contains($0.id) }
+            .map { $0.path.standardizedFileURL.path })
+        apps = scannedApps
+        selectedApps = Set(scannedApps.filter { selectedPaths.contains($0.path.standardizedFileURL.path) }
+            .map { $0.id })
         // Prefetch Homebrew descriptions once so hovering a package is instant.
         if isHomebrewInstalled {
             BrewInspector.shared.prefetchAll(apps.filter { $0.type == .brew }.map { $0.name })
@@ -107,12 +119,11 @@ class AppListViewModel: ObservableObject {
         if selectedCategory == .other, !apps.contains(where: { $0.type == .registered }) {
             selectedCategory = .all
         }
-        isScanning = false
         hasScanned = true
-        progressMessage = ""
     }
     
-    func cleanupSelected(permanently: Bool = false) async {
+    func cleanupSelected(/* permanently: Bool = false */) async {
+        guard !isCleaning, !isScanning else { return }
         isCleaning = true
         let appsToCleanup = apps.filter { selectedApps.contains($0.id) }
         var failed: [String] = []
@@ -125,8 +136,9 @@ class AppListViewModel: ObservableObject {
         for app in appsToCleanup {
             progressMessage = "Cleaning up \(app.name)..."
             do {
-                try await AppManager.shared.cleanup(app: app, permanently: permanently)
-                if !permanently && app.type != .brew && !app.isDanglingRegistration {
+                // try await AppManager.shared.cleanup(app: app, permanently: permanently)
+                try await AppManager.shared.cleanup(app: app)
+                if app.type != .brew && !app.isDanglingRegistration {
                     trashedAny = true
                 }
                 apps.removeAll { $0.id == app.id }
@@ -142,13 +154,15 @@ class AppListViewModel: ObservableObject {
             progressMessage = "Could not remove: \(failed.joined(separator: ", "))"
         } else if trashedAny {
             progressMessage = "Moved to the Trash. Empty the Trash to free up the space."
+        /* Permanent deletion temporarily disabled.
         } else if permanently {
             progressMessage = "Permanent deletion finished."
+        */
         } else {
             progressMessage = "Cleanup finished!"
         }
         try? await Task.sleep(nanoseconds: 3_000_000_000)
-        progressMessage = ""
+        if !isScanning, !isCleaning { progressMessage = "" }
     }
     
     func toggleSelection(for id: UUID) {

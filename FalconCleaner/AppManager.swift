@@ -38,7 +38,7 @@ class AppManager {
         return true
     }
     
-    func cleanup(app: AppInfo, permanently: Bool = false) async throws {
+    func cleanup(app: AppInfo /*, permanently: Bool = false */) async throws {
         // 0. A dangling registration has no files left: the bundle is already gone and
         //    only the Launch Services entry keeps it visible in Launchpad/Spotlight.
         //    Unregistering is the entire cleanup, and the file removal below would
@@ -83,8 +83,8 @@ class AppManager {
         var failedURLs: [URL] = []
 
         // 4 & 5. Remove the main path and related files.
-        // When `permanently` is set we delete outright (skipping the Trash); otherwise
-        // we move to the Trash. Only existing paths are touched (brew uninstall may have
+        // Permanent deletion is temporarily disabled; always move files to the Trash.
+        // Only existing paths are touched (brew uninstall may have
         // already removed the bundle).
         var targets: [URL] = []
         if itemExists(at: app.path) {
@@ -96,13 +96,14 @@ class AppManager {
 
         for url in targets {
             do {
+                /* Permanent deletion temporarily disabled.
                 if permanently {
                     try fileManager.removeItem(at: url)
-                } else {
-                    try fileManager.trashItem(at: url, resultingItemURL: nil)
                 }
+                */
+                try fileManager.trashItem(at: url, resultingItemURL: nil)
             } catch {
-                print("\(permanently ? "Delete" : "Trash") failed for \(url.lastPathComponent), staging for fallback: \(error)")
+                print("Trash failed for \(url.lastPathComponent), staging for fallback: \(error)")
                 failedURLs.append(url)
             }
         }
@@ -110,11 +111,14 @@ class AppManager {
         // 6. Fallback for items that failed the standard removal (typically root-owned
         // bundles like /Applications/zoom.us.app or launch daemons under /Library).
         if !failedURLs.isEmpty {
+            /* Permanent deletion temporarily disabled.
             if permanently {
                 if !privilegedRemove(urls: failedURLs) {
                     print("Privileged removal failed/cancelled for \(app.name)")
                 }
-            } else if !moveWithAppleScript(urls: failedURLs) {
+            }
+            */
+            if !moveWithAppleScript(urls: failedURLs) {
                 print("AppleScript batch fallback failed for \(app.name)")
             }
         }
@@ -186,6 +190,7 @@ class AppManager {
         process.waitUntilExit()
     }
 
+    /* Permanent deletion temporarily disabled, including the privileged fallback.
     private func privilegedRemove(urls: [URL]) -> Bool {
         // Permanently remove root-owned items the current user cannot delete directly.
         // All paths are removed in a single `rm -rf`, so the admin prompt appears once.
@@ -216,6 +221,7 @@ class AppManager {
         return true
 #endif
     }
+    */
 
     private func moveWithAppleScript(urls: [URL]) -> Bool {
         let pathStrings = urls.map { "\"\($0.path.replacingOccurrences(of: "\"", with: "\\\""))\"" }.joined(separator: ", ")

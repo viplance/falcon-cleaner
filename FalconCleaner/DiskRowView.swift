@@ -20,6 +20,7 @@ struct DiskRowView: View {
             ))
             .toggleStyle(CheckboxToggleStyle())
             .labelsHidden()
+            .pointingHandCursor()
 
             Image(nsImage: DiskIconProvider.icon(for: entry))
                 .resizable()
@@ -71,5 +72,6 @@ struct DiskRowView: View {
         .onTapGesture {
             if entry.isDirectory { open() }
         }
+        .pointingHandCursor(when: entry.isDirectory)
     }
 }

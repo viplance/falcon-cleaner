@@ -19,6 +19,7 @@ final class ProcessListViewModel: ObservableObject {
     @Published var hasLoaded: Bool = false
     @Published var sortOption: ProcessSortOption = .cpu
     @Published var searchText: String = ""
+    private var isRefreshing = false
 
     /// Processes after search filtering and sorting (largest load/usage on top).
     var visibleProcesses: [SystemProcess] {
@@ -44,14 +45,20 @@ final class ProcessListViewModel: ObservableObject {
     }
 
     func refresh() async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
         if !hasLoaded { isLoading = true }
+        defer {
+            isRefreshing = false
+            isLoading = false
+        }
         let result = await ProcessScanner.shared.scan()
+        guard !Task.isCancelled else { return }
         processes = result.processes
         load = result.load
         // Drop selections for processes that no longer exist.
         let alive = Set(processes.map { $0.pid })
         selectedProcesses.formIntersection(alive)
-        isLoading = false
         hasLoaded = true
     }
 
@@ -68,6 +75,7 @@ final class ProcessListViewModel: ObservableObject {
     }
 
     func killSelected() async {
+        guard !isKilling else { return }
         let pids = Array(selectedProcesses)
         guard !pids.isEmpty else { return }
 

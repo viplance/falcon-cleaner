@@ -2,12 +2,14 @@ import SwiftUI
 
 struct DiskBrowserView: View {
     @StateObject private var viewModel = DiskBrowserViewModel()
-    @AppStorage(AppSettings.permanentlyDeleteItemsKey) private var permanentlyDeleteItems = false
+    // Permanent deletion temporarily disabled; ignore any previously saved preference.
+    // @AppStorage(AppSettings.permanentlyDeleteItemsKey) private var permanentlyDeleteItems = false
     @State private var showingDeleteConfirmation = false
-    @State private var pendingPermanentDeletion = false
+    // @State private var pendingPermanentDeletion = false
 
     private var deletionActionTitle: String {
-        pendingPermanentDeletion ? "Delete Permanently" : "Move to Trash"
+        // pendingPermanentDeletion ? "Delete Permanently" : "Move to Trash"
+        "Move to Trash"
     }
 
     var body: some View {
@@ -17,12 +19,14 @@ struct DiskBrowserView: View {
                 Button(action: { viewModel.goUp() }) {
                     Image(systemName: "chevron.up")
                 }
+                .pointingHandCursor()
                 .disabled(!viewModel.canGoUp)
                 .help("Up one folder")
 
                 Button(action: { viewModel.goHome() }) {
                     Image(systemName: "house")
                 }
+                .pointingHandCursor()
                 .help("Home folder")
 
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -36,11 +40,21 @@ struct DiskBrowserView: View {
                             Button(crumb.name) { viewModel.navigate(to: crumb.url) }
                                 .buttonStyle(.link)
                                 .lineLimit(1)
+                                .pointingHandCursor()
                         }
                     }
                 }
 
                 Spacer(minLength: 8)
+
+                Button {
+                    viewModel.refresh()
+                } label: {
+                    Label(viewModel.isRefreshing ? "Refreshing..." : "Refresh", systemImage: "arrow.clockwise")
+                }
+                .pointingHandCursor()
+                .disabled(viewModel.isLoading || viewModel.isDeleting || viewModel.isRefreshing || showingDeleteConfirmation)
+                .help("Refresh this folder and recalculate its sizes")
 
                 if viewModel.isCalculatingSizes {
                     ProgressView().controlSize(.small)
@@ -63,6 +77,7 @@ struct DiskBrowserView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
+                .pointingHandCursor()
             }
             .padding(10)
             .background(Color(NSColor.controlBackgroundColor).opacity(0.8))
@@ -126,36 +141,43 @@ struct DiskBrowserView: View {
 
                 Button("Deselect All") { viewModel.deselectAll() }
                     .buttonStyle(.link)
-                    .disabled(viewModel.selected.isEmpty || viewModel.isDeleting)
+                    .pointingHandCursor()
+                    .disabled(viewModel.selected.isEmpty || viewModel.isDeleting || viewModel.isLoading)
 
                 Button(action: {
-                    pendingPermanentDeletion = permanentlyDeleteItems
+                    // pendingPermanentDeletion = permanentlyDeleteItems
                     showingDeleteConfirmation = true
                 }) {
-                    Text(permanentlyDeleteItems ? "Delete Permanently" : "Move to Trash")
+                    // Text(permanentlyDeleteItems ? "Delete Permanently" : "Move to Trash")
+                    Text("Move to Trash")
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .tint(.red)
-                .disabled(viewModel.selected.isEmpty || viewModel.isDeleting)
+                .pointingHandCursor()
+                .disabled(viewModel.selected.isEmpty || viewModel.isDeleting || viewModel.isLoading || viewModel.isRefreshing)
             }
             .padding()
             .background(.ultraThinMaterial)
         }
-        .task { if viewModel.entries.isEmpty { viewModel.load() } }
-        .onDisappear { viewModel.cancelSizeCalculation() }
+        .task { viewModel.load(preservingSelection: true) }
+        .onDisappear { viewModel.cancelLoading() }
         .alert(deletionActionTitle, isPresented: $showingDeleteConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button(deletionActionTitle, role: .destructive) {
-                let permanently = pendingPermanentDeletion
-                Task { await viewModel.deleteSelected(permanently: permanently) }
+                // let permanently = pendingPermanentDeletion
+                // Task { await viewModel.deleteSelected(permanently: permanently) }
+                Task { await viewModel.deleteSelected() }
             }
         } message: {
+            /* Permanent deletion temporarily disabled.
             if pendingPermanentDeletion {
                 Text("Permanently delete \(viewModel.selected.count) selected item(s), bypassing the Trash? This action cannot be undone.")
             } else {
                 Text("Move \(viewModel.selected.count) selected item(s) to the Trash? You can restore them from the Trash if needed.")
             }
+            */
+            Text("Move \(viewModel.selected.count) selected item(s) to the Trash? You can restore them from the Trash if needed.")
         }
     }
 }
