@@ -39,6 +39,9 @@ class AppManager {
     }
     
     func cleanup(app: AppInfo /*, permanently: Bool = false */) async throws {
+#if APPSTORE
+        try await cleanupSandboxed(app: app)
+#else
         // 0. A dangling registration has no files left: the bundle is already gone and
         //    only the Launch Services entry keeps it visible in Launchpad/Spotlight.
         //    Unregistering is the entire cleanup, and the file removal below would
@@ -133,8 +136,37 @@ class AppManager {
         if app.type == .registered {
             LaunchServicesScanner.unregister(url: app.path)
         }
+#endif
     }
 
+#if APPSTORE
+    private func cleanupSandboxed(app: AppInfo) async throws {
+        guard app.type != .brew, app.type != .startup, !app.isDanglingRegistration else {
+            throw cleanupError("This item cannot be removed in the App Store version.")
+        }
+        guard !app.isSystemApp, app.bundleIdentifier != Bundle.main.bundleIdentifier else {
+            throw cleanupError("\(app.name) cannot be removed by Falcon Cleaner.")
+        }
+        guard !isAppRunning(bundleIdentifier: app.bundleIdentifier) else {
+            throw cleanupError("Quit \(app.name), then try cleaning it again.")
+        }
+
+        let targets = CleanupFiles.uniqueTargets([app.path] + app.relatedFiles)
+        // Acquire all grants before changing anything. Cancellation leaves this app intact.
+        for target in targets {
+            try await SandboxFileAccess.shared.authorize(directory: target.deletingLastPathComponent())
+        }
+        try CleanupFiles.moveToTrash(targets, using: { url in
+            try self.fileManager.trashItem(at: url, resultingItemURL: nil)
+        })
+    }
+
+    private func cleanupError(_ message: String) -> NSError {
+        NSError(domain: "FalconCleaner", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+#endif
+
+#if !APPSTORE
     /// `fileExists` follows symbolic links and therefore returns false for a dangling
     /// `.app` link. Reading attributes uses lstat semantics, allowing cleanup and final
     /// verification to account for the link itself even when its destination is gone.
@@ -277,4 +309,5 @@ class AppManager {
         }
         return false
     }
+#endif
 }

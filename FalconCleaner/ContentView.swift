@@ -20,6 +20,12 @@ struct ContentView: View {
             : "Move \(selected.count) selected item(s) and their related files to the Trash? You can restore the files until you empty the Trash."
         */
         var message = "Move \(selected.count) selected item(s) and their related files to the Trash? You can restore the files until you empty the Trash."
+#if APPSTORE
+        if viewModel.relatedLibraryURL == nil {
+            message = "Move \(selected.count) selected application(s) to the Trash? App data is not included. You can restore the applications until you empty the Trash."
+        }
+        message += " macOS will ask you to allow access to their folders if needed."
+#endif
         if selected.contains(where: { $0.type == .brew }) {
             message += " Homebrew packages will be uninstalled directly and cannot be restored from the Trash."
         }
@@ -62,6 +68,20 @@ struct ContentView: View {
                 DiskBrowserView()
             } else {
             VStack(spacing: 0) {
+#if APPSTORE
+                HStack {
+                    Text(viewModel.relatedLibraryURL == nil
+                         ? "App data is not included. Allow access to your Library to find related files."
+                         : "Accessible related files in your Library are included. Access lasts until you quit.")
+                        .font(.callout)
+                    Spacer()
+                    Button("Include App Data…") {
+                        Task { await viewModel.includeAppData() }
+                    }
+                    .disabled(viewModel.isScanning || viewModel.isCleaning || viewModel.relatedLibraryURL != nil)
+                }
+                .padding()
+#endif
                 // Header / Search Bar
                 HStack {
                     Image(systemName: "magnifyingglass")
@@ -213,17 +233,25 @@ struct ContentView: View {
             CPUAlertMonitor.shared.start()
             await viewModel.scan()
         }
-        .alert(deletionActionTitle, isPresented: $showingConfirmation) {
-            Button("Cancel", role: .cancel) { }
-            Button(deletionActionTitle, role: .destructive) {
-                // let permanently = pendingPermanentDeletion
-                Task {
-                    // await viewModel.cleanupSelected(permanently: permanently)
-                    await viewModel.cleanupSelected()
+        .alert(viewModel.cleanupErrorMessage == nil ? deletionActionTitle : "Cleanup Needs Attention", isPresented: Binding(
+            get: { showingConfirmation || viewModel.cleanupErrorMessage != nil },
+            set: {
+                if !$0 {
+                    showingConfirmation = false
+                    viewModel.cleanupErrorMessage = nil
+                }
+            }
+        )) {
+            if viewModel.cleanupErrorMessage != nil {
+                Button("OK") { viewModel.cleanupErrorMessage = nil }
+            } else {
+                Button("Cancel", role: .cancel) { }
+                Button(deletionActionTitle, role: .destructive) {
+                    Task { await viewModel.cleanupSelected() }
                 }
             }
         } message: {
-            Text(cleanupConfirmationMessage)
+            Text(viewModel.cleanupErrorMessage ?? cleanupConfirmationMessage)
         }
     }
 }

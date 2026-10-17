@@ -6,12 +6,9 @@
 	  App Store entitlement set. Must be paired with the App Store provisioning
 	  profile embedded at Contents/embedded.provisionprofile.
 
-	  The App Sandbox is mandatory here. Under it the privileged features of
-	  Falcon Cleaner do not function: uninstalling other applications,
-	  terminating processes, running brew/du/launchctl, and requesting
-	  administrator privileges are all denied at runtime. Those code paths are
-	  compiled out via the APPSTORE flag so the sandboxed build degrades
-	  visibly instead of silently failing.
+  App removal uses user-selected directory access and FileManager Trash APIs.
+  Grants last for the current session. APPSTORE excludes privileged cleanup,
+  Finder automation, Homebrew management, and startup/process management.
 
 	  Local Developer ID builds use FalconCleaner/FalconCleaner.entitlements.
 	-->

@@ -1,14 +1,9 @@
 /**
  * Falcon Cleaner — App Store (.pkg) build for Transporter.
  *
- * IMPORTANT — read before submitting:
- * The App Store requires the App Sandbox, under which Falcon Cleaner's core
- * features cannot work: uninstalling other applications, terminating processes,
- * running brew/du/launchctl, and requesting administrator privileges are all
- * denied. Those paths are compiled out via -DAPPSTORE. The resulting build is a
- * heavily reduced app and is very likely to be rejected under App Review
- * guideline 2.4.5 / 4.2 (minimum functionality). Ship build-release.mjs
- * (Developer ID + notarization) for the full-featured product.
+ * The sandboxed build removes applications through FileManager after the user
+ * grants folder access in an Open panel. Related data requires separate Library
+ * access. Homebrew, startup and process management are excluded via APPSTORE.
  *
  * Build sequence and validation fixes follow the checklist learned from the
  * Openator submissions (Transporter errors 90788 / 90886 / 91109).
@@ -75,11 +70,6 @@ function step(n, label) {
 }
 
 console.log("=== Falcon Cleaner — App Store (.pkg) Build ===");
-console.log(
-  "\nNOTE: the App Sandbox disables this app's privileged features.\n" +
-    "      This package is very likely to be rejected under guideline 2.4.5 / 4.2.\n"
-);
-
 // --- Preflight -------------------------------------------------------------
 
 step(0, "Preflight checks...");

@@ -27,6 +27,28 @@ class AppListViewModel: ObservableObject {
     @Published var hasScanned: Bool = false
     @Published var isCleaning: Bool = false
     @Published var progressMessage: String = ""
+    @Published var cleanupErrorMessage: String?
+#if APPSTORE
+    @Published private(set) var relatedLibraryURL: URL?
+
+    func includeAppData() async {
+        guard !isScanning, !isCleaning else { return }
+        isCleaning = true
+        progressMessage = "Waiting for access to app data…"
+        do {
+            try await SandboxFileAccess.shared.authorize(directory: SandboxFileAccess.userLibraryURL)
+            relatedLibraryURL = SandboxFileAccess.userLibraryURL
+            isCleaning = false
+            await scan()
+        } catch is CancellationError {
+            progressMessage = "Access cancelled. App data will not be included."
+        } catch {
+            cleanupErrorMessage = error.localizedDescription
+            progressMessage = "Could not access app data."
+        }
+        isCleaning = false
+    }
+#endif
     @Published var searchText: String = ""
     @Published var selectedCategory: AppCategory = .all
     @Published var sortOption: SortOption = .size
@@ -35,7 +57,11 @@ class AppListViewModel: ObservableObject {
     var availableCategories: [AppCategory] {
         AppCategory.allCases.filter { category in
             switch category {
+#if APPSTORE
+            case .brew, .startup, .processes: return false
+#else
             case .brew: return isHomebrewInstalled
+#endif
             // Most Macs have no apps outside the standard folders; hide the empty tab.
             case .other: return apps.contains { $0.type == .registered }
             default: return true
@@ -102,7 +128,14 @@ class AppListViewModel: ObservableObject {
         }
         // Task.detached guarantees the whole scan (incl. its heavy synchronous prologue)
         // runs off the main thread, so the UI never freezes.
+#if APPSTORE
+        let libraryURL = relatedLibraryURL
+        let scannedApps = await Task.detached {
+            await AppScanner.shared.scanInstalledApps(relatedLibraryURL: libraryURL)
+        }.value
+#else
         let scannedApps = await Task.detached { await AppScanner.shared.scanInstalledApps() }.value
+#endif
         guard !Task.isCancelled else { return }
         // Scanning creates new UUIDs. Remap the surviving selection by bundle path.
         let selectedPaths = Set(apps.filter { selectedApps.contains($0.id) }
@@ -126,7 +159,9 @@ class AppListViewModel: ObservableObject {
         guard !isCleaning, !isScanning else { return }
         isCleaning = true
         let appsToCleanup = apps.filter { selectedApps.contains($0.id) }
+        cleanupErrorMessage = nil
         var failed: [String] = []
+        var cancelled = false
 
         // Only bundles and their files reach the Trash. Homebrew packages are removed by
         // `brew uninstall` and leftover entries are just unregistered, so neither can be
@@ -143,15 +178,23 @@ class AppListViewModel: ObservableObject {
                 }
                 apps.removeAll { $0.id == app.id }
                 selectedApps.remove(app.id)
+            } catch is CancellationError {
+                cancelled = true
+                break
             } catch {
-                failed.append(app.name)
+                failed.append("\(app.name): \(error.localizedDescription)")
                 print("Failed to clean up \(app.name): \(error)")
             }
         }
 
         isCleaning = false
         if !failed.isEmpty {
-            progressMessage = "Could not remove: \(failed.joined(separator: ", "))"
+            progressMessage = "Some items could not be removed."
+            cleanupErrorMessage = failed.joined(separator: "\n\n")
+        } else if cancelled {
+            progressMessage = trashedAny
+                ? "Cleanup stopped. Earlier items were moved to the Trash; remaining items are still selected."
+                : "Access cancelled. Selected items were not removed."
         } else if trashedAny {
             progressMessage = "Moved to the Trash. Empty the Trash to free up the space."
         /* Permanent deletion temporarily disabled.
@@ -161,8 +204,6 @@ class AppListViewModel: ObservableObject {
         } else {
             progressMessage = "Cleanup finished!"
         }
-        try? await Task.sleep(nanoseconds: 3_000_000_000)
-        if !isScanning, !isCleaning { progressMessage = "" }
     }
     
     func toggleSelection(for id: UUID) {

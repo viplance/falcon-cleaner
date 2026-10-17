@@ -9,14 +9,26 @@ nonisolated final class AppScanner {
     
     private let fileManager = FileManager.default
 
+    private var userApplicationsURL: URL? {
+#if APPSTORE
+        return SandboxFileAccess.userHomeURL.appendingPathComponent("Applications", isDirectory: true)
+#else
+        return fileManager.urls(for: .applicationDirectory, in: .userDomainMask).first
+#endif
+    }
+
     static func isHomebrewInstalled() -> Bool {
-        brewBinaryPath() != nil
+#if APPSTORE
+        return false
+#else
+        return brewBinaryPath() != nil
+#endif
     }
     
-    func scanInstalledApps() async -> [AppInfo] {
+    func scanInstalledApps(relatedLibraryURL: URL? = nil) async -> [AppInfo] {
         let appDirs = [
             URL(fileURLWithPath: "/Applications"),
-            fileManager.urls(for: .applicationDirectory, in: .userDomainMask).first,
+            userApplicationsURL,
             URL(fileURLWithPath: "/Library/Application Support/Microsoft/MAU2.0")
         ].compactMap { $0 }
         
@@ -33,7 +45,7 @@ nonisolated final class AppScanner {
                     // Dangling symlinks, Finder aliases and incomplete bundles still appear
                     // in Applications, but cannot be opened and do not form valid Bundles.
                     for url in contents where url.pathExtension.caseInsensitiveCompare("app") == .orderedSame {
-                        if let appInfo = extractAppInfo(from: url) {
+                        if let appInfo = extractAppInfo(from: url, libraryURL: relatedLibraryURL) {
                             apps.append(appInfo)
                             // Record the resolved path so the Launch Services pass does not
                             // list the same bundle twice. Symlinked entries (e.g.
@@ -54,13 +66,15 @@ nonisolated final class AppScanner {
             apps.append(contentsOf: brewApps)
         }
         
+#if !APPSTORE
         // 3. Scan Startup Scripts
         let startupApps = scanStartupScripts()
         apps.append(contentsOf: startupApps)
+#endif
 
         // 4. Scan apps registered with Launch Services outside the standard folders.
         //    These show up in Launchpad and Spotlight, so users expect to find them here.
-        let registeredApps = scanRegisteredApps(excludingPaths: scannedPaths)
+        let registeredApps = scanRegisteredApps(excludingPaths: scannedPaths, libraryURL: relatedLibraryURL)
         apps.append(contentsOf: registeredApps)
 
         return apps.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
@@ -121,7 +135,7 @@ nonisolated final class AppScanner {
     
     /// Builds entries for apps registered with Launch Services outside the standard
     /// folders, skipping any bundle the directory scan already reported.
-    private func scanRegisteredApps(excludingPaths scannedPaths: Set<String>) -> [AppInfo] {
+    private func scanRegisteredApps(excludingPaths scannedPaths: Set<String>, libraryURL: URL?) -> [AppInfo] {
         let registered = LaunchServicesScanner().scanRegisteredApps()
         var apps: [AppInfo] = []
 
@@ -147,7 +161,7 @@ nonisolated final class AppScanner {
                     category: "Leftover entry",
                     isDanglingRegistration: true
                 ))
-            } else if var appInfo = extractAppInfo(from: entry.url) {
+            } else if var appInfo = extractAppInfo(from: entry.url, libraryURL: libraryURL) {
                 appInfo.type = .registered
                 apps.append(appInfo)
             }
@@ -287,7 +301,7 @@ nonisolated final class AppScanner {
         Self.brewBinaryPath() ?? "brew" // fallback to env for legacy scan behavior
     }
     
-    private func extractAppInfo(from url: URL) -> AppInfo? {
+    private func extractAppInfo(from url: URL, libraryURL: URL?) -> AppInfo? {
         let bundle = Bundle(url: url)
         let isBroken = bundle == nil
         
@@ -301,13 +315,15 @@ nonisolated final class AppScanner {
         let icon = NSWorkspace.shared.icon(forFile: url.path)
         let bundleSize = allocatedSizeOfDirectory(at: url)
         
-        var relatedFiles = findRelatedFiles(forName: name, bundleIdentifier: bundleIdentifier)
+        var relatedFiles = findRelatedFiles(forName: name, bundleIdentifier: bundleIdentifier, libraryURL: libraryURL)
+#if !APPSTORE
         // Include associated startup items (LaunchAgents/LaunchDaemons) so they are
         // removed together with the app.
         for startupItem in findRelatedStartupItems(bundleIdentifier: bundleIdentifier, appPath: url)
         where !relatedFiles.contains(startupItem) {
             relatedFiles.append(startupItem)
         }
+#endif
         let relatedSize = relatedFiles.reduce(0) { $0 + allocatedSizeOfDirectory(at: $1) }
 
         let category = isBroken
@@ -353,7 +369,7 @@ nonisolated final class AppScanner {
         return size
     }
     
-    func findRelatedFiles(forName name: String, bundleIdentifier: String?) -> [URL] {
+    func findRelatedFiles(forName name: String, bundleIdentifier: String?, libraryURL: URL? = nil) -> [URL] {
         var related: [URL] = []
         let libraryFolders = [
             "Application Support",
@@ -368,7 +384,12 @@ nonisolated final class AppScanner {
             "HTTPStorages"
         ]
         
+#if APPSTORE
+        // Never scan our own sandbox container as if it belonged to another app.
+        guard let homeLibrary = libraryURL else { return [] }
+#else
         let homeLibrary = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library")
+#endif
         
         for folder in libraryFolders {
             let folderURL = homeLibrary.appendingPathComponent(folder)

@@ -68,8 +68,8 @@ Xcode project, along with `version` in `package.json`, before each release.
 
 ### App Store build and upload
 
-Before each upload, update `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in both Xcode
-configurations and `version` in `package.json`. Increase the build number for each upload.
+Before each upload, increase `CURRENT_PROJECT_VERSION` in both Xcode configurations.
+For a new user-facing version, also update `MARKETING_VERSION` and `version` in `package.json`.
 
 The build requires the **Apple Distribution** and **3rd Party Mac Developer Installer**
 certificates for team `W37L5728Y6`, an App Store provisioning profile at
@@ -117,9 +117,17 @@ Signing credentials remain in Keychain/Xcode; do not commit passwords or private
 The Developer ID build runs **without the App Sandbox**, with Apple's **hardened runtime**,
 Developer ID signing, and notarization. The App Store build enables the App Sandbox, which
 restricts access to other applications, system files, and privileged operations.
+When you clean applications, the App Store build asks you to select their containing
+folders in a macOS Open dialog before moving them to the Trash. Canceling leaves
+that application's files intact; previously cleaned applications remain in the Trash.
+Use **Include App Data…** before cleaning to grant access to your user Library and
+rescan for accessible related files. Without this access, only the app bundles are
+included. Grants last until you quit Falcon Cleaner and must be renewed next session.
+The App Store build does not offer Homebrew, Startup, or Processes management and
+asks you to quit a running application before cleaning it. Files requiring administrator
+privileges cannot be removed by this build; failures remain visible for review.
 
-Because the app analyzes local system configurations and removes applications, it interfaces
-with standard AppleScript commands. When uninstalling protected packages or background
+The Developer ID build uses AppleScript for operations requiring additional permissions. When uninstalling protected packages or background
 LaunchDaemons, macOS will prompt you for your Administrator password to authorize the cleanup.
 Applications, related files, and items removed in Disk are moved to the Trash. Permanent
 deletion is temporarily disabled, including for users who previously enabled it. Homebrew
@@ -132,3 +140,24 @@ requests and collects no data whatsoever.
 ## 📄 License
 
 Check the `LICENSE` file in the repository (if applicable) for more details.
+
+## App Store cleanup verification
+
+Run the filesystem regression checks (only temporary fixtures are removed):
+
+```bash
+xcrun swiftc -DAPPSTORE FalconCleaner/CleanupFiles.swift FalconCleaner/SandboxFileAccess.swift Tests/CleanupFilesRegression.swift -o /tmp/falcon-cleanup-tests
+/tmp/falcon-cleanup-tests
+```
+
+Before resubmitting, test the signed sandboxed package on a separate Mac/user account:
+
+1. Install a disposable, user-owned app in Applications. Select it and click Clean Up.
+   Confirm, allow access to Applications, and check that the actual bundle is in the Trash.
+2. Cancel the folder-access dialog in a new session: the app must remain on disk and selected.
+3. Use Include App Data… to select your real user Library. Create a disposable app preference
+   fixture, refresh, and verify that both the app and its matched preference reach the Trash.
+4. Try a running app and an item you cannot delete: a persistent error must explain the failure.
+   A failed related file must not be reported as complete, even if the app bundle was moved.
+5. Quit and relaunch: folder access must be requested again. Repeat after installing as an
+   update to the previous App Store build. Test on macOS 27.0, the review environment.

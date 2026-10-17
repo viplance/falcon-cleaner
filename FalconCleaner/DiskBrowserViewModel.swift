@@ -200,6 +200,19 @@ final class DiskBrowserViewModel: ObservableObject {
         let targets = entries.filter { selected.contains($0.id) }
         guard !targets.isEmpty else { return }
         isDeleting = true
+#if APPSTORE
+        do {
+            try await SandboxFileAccess.shared.authorize(directory: currentURL)
+        } catch is CancellationError {
+            isDeleting = false
+            statusMessage = "Access cancelled. Selected items were not removed."
+            return
+        } catch {
+            isDeleting = false
+            statusMessage = error.localizedDescription
+            return
+        }
+#endif
         var failed: [String] = []
         for entry in targets {
             do {
@@ -210,7 +223,7 @@ final class DiskBrowserViewModel: ObservableObject {
                 */
                 try FileManager.default.trashItem(at: entry.url, resultingItemURL: nil)
             } catch {
-                failed.append(entry.name)
+                failed.append("\(entry.name): \(error.localizedDescription)")
             }
         }
         isDeleting = false
